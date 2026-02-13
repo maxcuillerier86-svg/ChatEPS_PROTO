@@ -23,6 +23,29 @@ MODE_SYSTEM = {
 }
 
 
+def _conversation_out(conv: Conversation) -> dict:
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "mode": conv.mode,
+        "type": conv.type,
+        "course_id": conv.course_id,
+        "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
+    }
+
+
+def _message_out(msg: Message) -> dict:
+    return {
+        "id": msg.id,
+        "conversation_id": msg.conversation_id,
+        "role": msg.role,
+        "content": msg.content,
+        "metadata_json": msg.metadata_json,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }
+
+
 @router.get("/models")
 async def models():
     return {"models": await list_models()}
@@ -47,24 +70,26 @@ def create_conversation(payload: ConversationCreate, db: Session = Depends(get_d
     db.commit()
     db.refresh(conv)
     log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv.mode, "pseudo": user.full_name})
-    return conv
+    return _conversation_out(conv)
 
 
 @router.get("/conversations")
 def list_conversations(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     created_ids = [
-        e.payload.get("conversation_id")
+        int(e.payload.get("conversation_id"))
         for e in db.query(TraceEvent).filter(TraceEvent.user_id == user.id, TraceEvent.event_type == "conversation_create").all()
         if e.payload.get("conversation_id")
     ]
     if not created_ids:
         return []
-    return db.query(Conversation).filter(Conversation.id.in_(created_ids)).order_by(Conversation.updated_at.desc()).all()
+    conversations = db.query(Conversation).filter(Conversation.id.in_(created_ids)).order_by(Conversation.updated_at.desc()).all()
+    return [_conversation_out(c) for c in conversations]
 
 
 @router.get("/conversations/{conversation_id}/messages")
 def list_messages(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
-    return db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at.asc()).all()
+    messages = db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at.asc()).all()
+    return [_message_out(m) for m in messages]
 
 
 @router.post("/conversations/{conversation_id}/stream")

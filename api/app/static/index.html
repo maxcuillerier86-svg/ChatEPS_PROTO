@@ -241,23 +241,41 @@ async function refreshPdfs(){
 }
 
 function addConversationButton(c){
+  const id = Number(c?.id);
+  if(!Number.isFinite(id)) return;
   const el = document.getElementById('conversations');
   const b = document.createElement('button');
-  b.textContent = `${c.title} (${c.mode})`;
+  b.textContent = `${c.title || 'Nouveau fil'} (${c.mode || 'co_design'})`;
   b.style.display='block'; b.style.margin='8px 0';
-  b.onclick = ()=> loadMessages(c.id);
+  b.onclick = ()=> loadMessages(id);
   el.prepend(b);
+}
+
+function normalizeConversationPayload(data){
+  if(!data) return null;
+  if(Array.isArray(data)) return data[0] || null;
+  if(data.conversation) return data.conversation;
+  return data;
 }
 
 async function createConversation(){
   try{
     const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
-    const conv = await res.json();
-    if (!conv || typeof conv.id !== 'number') throw new Error('Conversation invalide retournée par l’API');
-    currentConversationId = conv.id;
-    addConversationButton(conv);
-    await loadMessages(conv.id);
-    return conv;
+    const raw = await res.json();
+    const conv = normalizeConversationPayload(raw);
+    const id = Number(conv?.id);
+    if (!Number.isFinite(id)) {
+      const items = await loadConversations();
+      if(items.length){
+        await loadMessages(items[0].id);
+        return items[0];
+      }
+      throw new Error('Conversation invalide retournée par l’API');
+    }
+    currentConversationId = id;
+    addConversationButton({...conv, id});
+    await loadMessages(id);
+    return {...conv, id};
   }catch(e){
     document.getElementById('session-status').innerText = `❌ ${e.message}`;
     return null;
@@ -266,16 +284,20 @@ async function createConversation(){
 
 async function loadConversations(){
   const res = await api('/chat/conversations');
-  const items = await res.json();
+  const raw = await res.json();
+  const items = Array.isArray(raw) ? raw : (raw?.items || []);
   const el = document.getElementById('conversations');
   el.innerHTML = '';
   items.forEach(c=>{
+    const id = Number(c?.id);
+    if(!Number.isFinite(id)) return;
     const b = document.createElement('button');
-    b.textContent = `${c.title} (${c.mode})`;
+    b.textContent = `${c.title || 'Sans titre'} (${c.mode || 'co_design'})`;
     b.style.display='block'; b.style.margin='8px 0';
-    b.onclick = ()=> loadMessages(c.id);
+    b.onclick = ()=> loadMessages(id);
     el.appendChild(b);
   });
+  return items.filter(c=>Number.isFinite(Number(c?.id)));
 }
 
 async function loadMessages(id){

@@ -47,19 +47,28 @@ async def pull_model(model: str) -> dict:
         return resp.json()
 
 
-async def _embed_via_legacy(client: httpx.AsyncClient, text: str) -> list[float]:
+def _is_model_not_found(resp: httpx.Response) -> bool:
+    body = (resp.text or "").lower()
+    return "model" in body and "not" in body and "found" in body
+
+
+async def _embed_via_legacy(client: httpx.AsyncClient, text: str, model: str) -> list[float]:
     resp = await client.post(
         f"{settings.ollama_url}/api/embeddings",
-        json={"model": settings.ollama_embedding_model, "prompt": text},
+        json={"model": model, "prompt": text},
     )
     resp.raise_for_status()
-    return resp.json()["embedding"]
+    data = resp.json()
+    vector = data.get("embedding")
+    if not vector:
+        raise ValueError("Réponse /api/embeddings sans embedding")
+    return vector
 
 
-async def _embed_via_current(client: httpx.AsyncClient, text: str) -> list[float]:
+async def _embed_via_current(client: httpx.AsyncClient, text: str, model: str) -> list[float]:
     resp = await client.post(
         f"{settings.ollama_url}/api/embed",
-        json={"model": settings.ollama_embedding_model, "input": text},
+        json={"model": model, "input": text},
     )
     resp.raise_for_status()
     data = resp.json()
@@ -69,40 +78,54 @@ async def _embed_via_current(client: httpx.AsyncClient, text: str) -> list[float
     return embeds[0]
 
 
-async def _attempt_pull_embedding_model(client: httpx.AsyncClient):
-    await client.post(
+async def _attempt_pull_model(client: httpx.AsyncClient, model: str):
+    resp = await client.post(
         f"{settings.ollama_url}/api/pull",
-        json={"name": settings.ollama_embedding_model, "stream": False},
+        json={"name": model, "stream": False},
         timeout=600,
     )
+    resp.raise_for_status()
+
+
+async def _embed_one_text(client: httpx.AsyncClient, text: str, model: str) -> list[float]:
+    try:
+        return await _embed_via_legacy(client, text, model)
+    except httpx.HTTPStatusError as exc_legacy:
+        if exc_legacy.response.status_code == 404:
+            return await _embed_via_current(client, text, model)
+        raise
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     embeddings: list[list[float]] = []
+    model_candidates = [settings.ollama_embedding_model]
+    if settings.ollama_chat_model not in model_candidates:
+        model_candidates.append(settings.ollama_chat_model)
+
     async with httpx.AsyncClient(timeout=120) as client:
         for text in texts:
-            for attempt in range(2):
-                try:
-                    emb = await _embed_via_legacy(client, text)
-                    embeddings.append(emb)
-                    break
-                except httpx.HTTPStatusError as exc_legacy:
-                    # API shape changed on newer Ollama versions
-                    if exc_legacy.response.status_code == 404:
-                        try:
-                            emb = await _embed_via_current(client, text)
-                            embeddings.append(emb)
+            if not text or not text.strip():
+                continue
+            last_exc: Exception | None = None
+            embedded = False
+            for model in model_candidates:
+                for attempt in range(2):
+                    try:
+                        embeddings.append(await _embed_one_text(client, text, model))
+                        embedded = True
+                        break
+                    except httpx.HTTPStatusError as exc:
+                        last_exc = exc
+                        if attempt == 0 and _is_model_not_found(exc.response):
+                            await _attempt_pull_model(client, model)
+                            continue
+                        if exc.response.status_code in (404, 400, 422) and _is_model_not_found(exc.response):
                             break
-                        except httpx.HTTPStatusError as exc_current:
-                            body = (exc_current.response.text or "").lower()
-                            # missing embedding model: auto-pull then retry once
-                            if attempt == 0 and ("model" in body and "not" in body and "found" in body):
-                                await _attempt_pull_embedding_model(client)
-                                continue
-                            raise
-                    body = (exc_legacy.response.text or "").lower()
-                    if attempt == 0 and ("model" in body and "not" in body and "found" in body):
-                        await _attempt_pull_embedding_model(client)
-                        continue
-                    raise
+                        raise
+                if embedded:
+                    break
+            if not embedded:
+                if last_exc:
+                    raise last_exc
+                raise RuntimeError("Aucun embedding produit")
     return embeddings
