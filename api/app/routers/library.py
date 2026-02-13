@@ -8,10 +8,14 @@ from app.core.database import SessionLocal, get_db
 from app.core.deps import get_actor_user
 from app.models.entities import PdfDocument, User
 from app.schemas.pdf import PdfOut
-from app.services.rag import ingest_document
+from app.services.rag import ingest_document, remove_document_chunks
 from app.services.tracing import log_event
 
 router = APIRouter(prefix="/library", tags=["library"])
+
+
+def _pdf_storage_path(filename: str) -> Path:
+    return Path(settings.storage_root) / "pdfs" / filename
 
 
 @router.post("/upload", response_model=PdfOut)
@@ -65,4 +69,41 @@ async def upload_pdf(
 
 @router.get("/documents", response_model=list[PdfOut])
 def list_docs(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
-    return db.query(PdfDocument).all()
+    return db.query(PdfDocument).order_by(PdfDocument.created_at.desc()).all()
+
+
+@router.patch("/documents/{doc_id}", response_model=PdfOut)
+def rename_doc(doc_id: int, payload: dict, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Nouveau titre requis")
+    doc = db.query(PdfDocument).filter(PdfDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document introuvable")
+    doc.title = title
+    db.commit()
+    db.refresh(doc)
+    log_event(db, user.id, "pdf_rename", {"doc_id": doc.id, "title": title})
+    return doc
+
+
+@router.delete("/documents/{doc_id}")
+async def delete_doc(doc_id: int, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
+    doc = db.query(PdfDocument).filter(PdfDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document introuvable")
+
+    filename = doc.filename
+    db.delete(doc)
+    db.commit()
+
+    p = _pdf_storage_path(filename)
+    if p.exists():
+        try:
+            p.unlink()
+        except Exception:
+            pass
+
+    await remove_document_chunks(doc_id)
+    log_event(db, user.id, "pdf_delete", {"doc_id": doc_id, "filename": filename})
+    return {"ok": True}

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.deps import get_actor_user
 from app.models.entities import Conversation, Message, TraceEvent, User
 from app.schemas.chat import ConversationCreate, MessageIn
@@ -44,6 +44,33 @@ def _message_out(msg: Message) -> dict:
         "metadata_json": msg.metadata_json,
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
     }
+
+
+def _diversify_hits(hits: list[dict], selected_doc_ids: list[int] | None, max_items: int) -> list[dict]:
+    if not hits:
+        return []
+    if not selected_doc_ids or len(selected_doc_ids) <= 1:
+        return hits[:max_items]
+
+    by_doc: dict[int, list[dict]] = {}
+    for h in hits:
+        did = int(h.get("doc_id", -1))
+        by_doc.setdefault(did, []).append(h)
+
+    out: list[dict] = []
+    # one snippet per selected doc first
+    for did in selected_doc_ids:
+        snippets = by_doc.get(int(did)) or []
+        if snippets:
+            out.append(snippets.pop(0))
+    # then fill with remaining best hits
+    if len(out) < max_items:
+        for h in hits:
+            if h not in out:
+                out.append(h)
+            if len(out) >= max_items:
+                break
+    return out[:max_items]
 
 
 @router.get("/models")
@@ -118,7 +145,9 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
     context = ""
     if payload.use_rag:
         try:
-            hits = await retrieve(payload.content, payload.collection_ids)
+            target_k = max(6, len(payload.collection_ids or []) * 2)
+            hits = await retrieve(payload.content, payload.collection_ids, top_k=target_k)
+            hits = _diversify_hits(hits, payload.collection_ids, max_items=target_k)
             citations = [
                 {"doc_id": h["doc_id"], "title": h["title"], "page": h["page"], "excerpt": h["text"][:280]}
                 for h in hits
@@ -131,7 +160,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
     model_messages = [{"role": "system", "content": MODE_SYSTEM.get(conv_mode, MODE_SYSTEM["exploration_novice"])}]
     for m in history[-12:]:
         model_messages.append({"role": m.role, "content": m.content})
-    model_messages[-1]["content"] = payload.content + context + "\nSi aucune source fournie, indique-le explicitement. Termine par auto-évaluation 1-5."
+    model_messages[-1]["content"] = payload.content + context + "\nSi plusieurs sources PDF sont sélectionnées, compare-les explicitement. Si aucune source fournie, indique-le explicitement. Termine par auto-évaluation 1-5."
 
     async def event_stream():
         collected = ""
@@ -146,28 +175,29 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     collected += token
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if obj.get("done"):
-                    ai_msg = Message(
-                        conversation_id=conv_id,
-                        role="assistant",
-                        content=collected,
-                        metadata_json={"citations": citations, "model": payload.model},
-                    )
-                    db.add(ai_msg)
-                    db.commit()
-                    log_event(
-                        db,
-                        user_id,
-                        "chat_turn",
-                        {
-                            "conversation_id": conv_id,
-                            "has_citations": bool(citations),
-                            "prompt_length": len(payload.content),
-                            "mode": conv.mode,
-                            "model": payload.model,
-                            "pseudo": user_name,
-                        },
-                        conversation_id=conv_id,
-                    )
+                    with SessionLocal() as writer_db:
+                        ai_msg = Message(
+                            conversation_id=conv_id,
+                            role="assistant",
+                            content=collected,
+                            metadata_json={"citations": citations, "model": payload.model},
+                        )
+                        writer_db.add(ai_msg)
+                        writer_db.commit()
+                        log_event(
+                            writer_db,
+                            user_id,
+                            "chat_turn",
+                            {
+                                "conversation_id": conv_id,
+                                "has_citations": bool(citations),
+                                "prompt_length": len(payload.content),
+                                "mode": conv_mode,
+                                "model": payload.model,
+                                "pseudo": user_name,
+                            },
+                            conversation_id=conv_id,
+                        )
                     yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': f'Échec chat Ollama: {exc}'})}\n\n"

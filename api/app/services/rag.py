@@ -143,3 +143,24 @@ async def retrieve(query: str, doc_ids: list[int] | None = None, top_k: int = 4)
     if ranked:
         return [ch for _, ch in ranked[:top_k]]
     return chunks[:top_k]
+
+
+async def remove_document_chunks(doc_id: int):
+    try:
+        cp = _cache_path(doc_id)
+        if cp.exists():
+            cp.unlink()
+    except Exception:
+        pass
+
+    try:
+        from qdrant_client.http.models import FieldCondition, Filter, MatchValue
+
+        qdrant().delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=Filter(
+                must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
+            ),
+        )
+    except Exception:
+        pass

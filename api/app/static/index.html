@@ -50,7 +50,7 @@
       <span id="pdf-status"></span>
     </div>
     <div id="pdfs" class="pdf-list"></div>
-    <p class="muted">Sélectionnez un ou plusieurs PDF: seules ces sources seront utilisées dans la réponse IA.</p>
+    <p class="muted">Sélectionnez un ou plusieurs PDF: seules ces sources seront utilisées dans la réponse IA. <span id="pdf-selected-info"></span></p>
   </div>
 
   <div class="grid">
@@ -200,11 +200,44 @@ async function uploadPdf(){
   }
 }
 
+function updateSelectedPdfInfo(){
+  const n = selectedPdfIds.length;
+  document.getElementById('pdf-selected-info').innerText = n ? `${n} sélectionné(s)` : 'aucun sélectionné';
+}
+
+async function renamePdf(docId){
+  const current = document.querySelector(`button[data-rename-id="${docId}"]`)?.getAttribute('data-current-title') || '';
+  const next = prompt('Nouveau nom du PDF :', current);
+  if(next === null) return;
+  const title = next.trim();
+  if(!title) return;
+  try{
+    await api(`/library/documents/${docId}`, {method:'PATCH', body: JSON.stringify({title})});
+    document.getElementById('pdf-status').innerText = '✅ PDF renommé';
+    await refreshPdfs();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function deletePdf(docId){
+  if(!confirm('Supprimer ce PDF ?')) return;
+  try{
+    await api(`/library/documents/${docId}`, {method:'DELETE'});
+    selectedPdfIds = selectedPdfIds.filter(x => x !== docId);
+    document.getElementById('pdf-status').innerText = '✅ PDF supprimé';
+    await refreshPdfs();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
 function renderPdfs(items){
   const box = document.getElementById('pdfs');
   box.innerHTML = '';
   if(!items.length){
     box.innerHTML = '<span class="muted">Aucun PDF pour le moment.</span>';
+    updateSelectedPdfInfo();
     return;
   }
   items.forEach(d=>{
@@ -213,8 +246,10 @@ function renderPdfs(items){
     const enabled = d.status === 'ready';
     const checked = enabled && selectedPdfIds.includes(d.id) ? 'checked' : '';
     const disabled = enabled ? '' : 'disabled';
-    const note = d.status === 'failed' ? ' (ingestion échouée)' : '';
-    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}${note}</label>`;
+    const note = d.status === 'failed' ? ' (ingestion échouée, fallback local activé)' : '';
+    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}${note}</label>
+      <button data-rename-id="${d.id}" data-current-title="${String(d.title).replace(/"/g, '&quot;')}" style="margin-left:8px">Renommer</button>
+      <button data-delete-id="${d.id}" style="margin-left:6px;background:#b42318">Supprimer</button>`;
     box.appendChild(row);
   });
   box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
@@ -225,8 +260,16 @@ function renderPdfs(items){
       }else{
         selectedPdfIds = selectedPdfIds.filter(x=>x!==id);
       }
+      updateSelectedPdfInfo();
     });
   });
+  box.querySelectorAll('button[data-rename-id]').forEach(btn=>{
+    btn.addEventListener('click', ()=> renamePdf(Number(btn.getAttribute('data-rename-id'))));
+  });
+  box.querySelectorAll('button[data-delete-id]').forEach(btn=>{
+    btn.addEventListener('click', ()=> deletePdf(Number(btn.getAttribute('data-delete-id'))));
+  });
+  updateSelectedPdfInfo();
 }
 
 async function refreshPdfs(){
@@ -235,6 +278,7 @@ async function refreshPdfs(){
     const docs = await res.json();
     selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id && d.status === "ready"));
     renderPdfs(docs);
+    updateSelectedPdfInfo();
   }catch(e){
     document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
   }
@@ -328,6 +372,10 @@ async function sendMessage(){
   const content = document.getElementById('prompt').value;
   const useRag = document.getElementById('use-rag').checked;
   selectedModel = document.getElementById('model').value;
+  const uniqueIds = [...new Set(selectedPdfIds.map(Number).filter(Number.isFinite))];
+  if(useRag && uniqueIds.length === 0){
+    document.getElementById('pdf-status').innerText = "⚠️ Activez au moins un PDF prêt, ou décochez Utiliser RAG.";
+  }
   localStorage.setItem('model', selectedModel);
 
   appendMessage('user', content);
@@ -336,7 +384,7 @@ async function sendMessage(){
   const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
     method:'POST',
     headers:getHeaders({'Content-Type':'application/json'}),
-    body: JSON.stringify({content, use_rag:useRag, collection_ids:selectedPdfIds, model:selectedModel})
+    body: JSON.stringify({content, use_rag:useRag, collection_ids:uniqueIds, model:selectedModel})
   });
   if(!res.ok){
     aiNode.innerHTML = `<b>assistant:</b> ❌ ${await readErrorMessage(res)}`;
