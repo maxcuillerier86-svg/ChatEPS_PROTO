@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Co-PE Local UI</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;color:#16202a}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    input,textarea,button,select{padding:8px;border:1px solid #ccd3dd;border-radius:8px}
+    button{background:#2458d3;color:#fff;cursor:pointer}
+    .grid{display:grid;grid-template-columns:1fr 2fr;gap:12px}
+    .msg{padding:8px;border-bottom:1px solid #eef2f6}
+    .assistant{background:#f3f7ff}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{color:#667085;font-size:13px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1 style="margin:0">Co-PE – Interface locale</h1>
+    <p>Utilisez un pseudo, choisissez/téléchargez un modèle Ollama et discutez.</p>
+  </div>
+
+  <div class="card">
+    <h3>Session</h3>
+    <div class="row">
+      <input id="pseudo" placeholder="Votre pseudo" value="Max" />
+      <select id="model"></select>
+      <input id="other-model" placeholder="OTHER: ex. gpt-oss:20b" style="min-width:220px" />
+      <button onclick="setOtherModel()">Utiliser OTHER</button>
+      <button onclick="pullCurrentModel()">Pull modèle</button>
+      <button onclick="startSession()">Démarrer</button>
+      <span id="session-status"></span>
+    </div>
+    <p class="muted">Presets inclus: gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. Le bouton Pull lance `ollama pull` via API locale. En local Windows, utilisez `OLLAMA_URL=http://localhost:11434`.</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Conversations</h3>
+      <button onclick="createConversation()">Nouveau fil</button>
+      <div id="conversations"></div>
+    </div>
+
+    <div class="card">
+      <h3>Chat</h3>
+      <div id="messages" style="min-height:280px;max-height:420px;overflow:auto"></div>
+      <textarea id="prompt" rows="4" style="width:100%">Aide-moi à créer un plan de séance volleyball.</textarea>
+      <div style="margin-top:8px">
+        <button onclick="sendMessage()">Envoyer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let pseudo = localStorage.getItem('pseudo') || '';
+let selectedModel = localStorage.getItem('model') || '';
+let currentConversationId = null;
+const PRESET_MODELS = ['gpt-oss:20b', 'llama3.1', 'llama3.2', 'mistral', 'qwen2.5'];
+
+async function readErrorMessage(res){
+  try{
+    const data = await res.json();
+    return data.detail || JSON.stringify(data);
+  }catch{
+    return await res.text();
+  }
+}
+
+function getHeaders(extra = {}) {
+  if (!pseudo) throw new Error('Pseudo requis');
+  return { 'X-Pseudo': pseudo, ...extra };
+}
+
+async function api(path, opts={}){
+  const headers = opts.headers || {};
+  if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+  Object.assign(headers, getHeaders());
+  const res = await fetch(path, {...opts, headers});
+  if (!res.ok) throw new Error(await readErrorMessage(res));
+  return res;
+}
+
+function fillModelSelect(models){
+  const select = document.getElementById('model');
+  select.innerHTML = '';
+  const merged = [...new Set([...PRESET_MODELS, ...(models||[])])];
+  merged.forEach((m) => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    select.appendChild(opt);
+  });
+  if (selectedModel && merged.includes(selectedModel)) {
+    select.value = selectedModel;
+  } else if (merged.length) {
+    select.value = merged[0];
+  }
+}
+
+async function loadModels() {
+  try {
+    const res = await fetch('/chat/models');
+    const data = await res.json();
+    fillModelSelect(data.models || []);
+  } catch {
+    fillModelSelect([]);
+  }
+}
+
+function setOtherModel(){
+  const other = document.getElementById('other-model').value.trim();
+  if(!other) return;
+  const select = document.getElementById('model');
+  if(!Array.from(select.options).find(o => o.value === other)){
+    const opt = document.createElement('option');
+    opt.value = other;
+    opt.textContent = other + ' (OTHER)';
+    select.appendChild(opt);
+  }
+  select.value = other;
+  selectedModel = other;
+  localStorage.setItem('model', selectedModel);
+  document.getElementById('session-status').innerText = `🧠 Modèle sélectionné: ${selectedModel}`;
+}
+
+async function pullCurrentModel(){
+  try{
+    const model = document.getElementById('model').value || document.getElementById('other-model').value.trim();
+    if(!model) throw new Error('Sélectionnez ou saisissez un modèle');
+    document.getElementById('session-status').innerText = `⏳ Pull en cours: ${model}`;
+    const res = await fetch('/chat/models/pull', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model})
+    });
+    if(!res.ok) throw new Error(await readErrorMessage(res));
+    await loadModels();
+    document.getElementById('model').value = model;
+    selectedModel = model;
+    localStorage.setItem('model', selectedModel);
+    document.getElementById('session-status').innerText = `✅ Modèle prêt: ${model}`;
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function startSession(){
+  try{
+    pseudo = document.getElementById('pseudo').value.trim();
+    selectedModel = document.getElementById('model').value;
+    if(!pseudo) throw new Error('Pseudo obligatoire');
+    localStorage.setItem('pseudo', pseudo);
+    localStorage.setItem('model', selectedModel);
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo} | modèle: ${selectedModel}`;
+    await loadConversations();
+  }catch(e){
+    document.getElementById('session-status').innerText = '❌ ' + e.message;
+  }
+}
+
+async function createConversation(){
+  const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
+  const conv = await res.json();
+  if (!conv || typeof conv.id !== 'number') throw new Error('Conversation invalide retournée par l’API');
+  currentConversationId = conv.id;
+  await loadConversations();
+  await loadMessages(conv.id);
+}
+
+async function loadConversations(){
+  const res = await api('/chat/conversations');
+  const items = await res.json();
+  const el = document.getElementById('conversations');
+  el.innerHTML = '';
+  items.forEach(c=>{
+    const b = document.createElement('button');
+    b.textContent = `${c.title} (${c.mode})`;
+    b.style.display='block'; b.style.margin='8px 0';
+    b.onclick = ()=> loadMessages(c.id);
+    el.appendChild(b);
+  });
+}
+
+async function loadMessages(id){
+  if (id === undefined || id === null || Number.isNaN(Number(id))) return;
+  currentConversationId = Number(id);
+  const res = await api(`/chat/conversations/${id}/messages`);
+  const msgs = await res.json();
+  const box = document.getElementById('messages');
+  box.innerHTML='';
+  msgs.forEach(m=>appendMessage(m.role, m.content));
+}
+
+function appendMessage(role, content){
+  const box = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'assistant' ? 'assistant' : '');
+  div.innerHTML = `<b>${role}:</b> ${String(content).replace(/\n/g,'<br/>')}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+async function sendMessage(){
+  if(!currentConversationId) return alert('Créez ou sélectionnez une conversation');
+  const content = document.getElementById('prompt').value;
+  selectedModel = document.getElementById('model').value;
+  localStorage.setItem('model', selectedModel);
+
+  appendMessage('user', content);
+  const aiNode = appendMessage('assistant', '');
+
+  const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
+    method:'POST',
+    headers:getHeaders({'Content-Type':'application/json'}),
+    body: JSON.stringify({content, use_rag:true, collection_ids:[], model:selectedModel})
+  });
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let built = '';
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    const chunk = decoder.decode(value);
+    chunk.split('\n\n').forEach(line=>{
+      if(!line.startsWith('data:')) return;
+      const data = JSON.parse(line.slice(5).trim());
+      if(data.token){
+        built += data.token;
+        aiNode.innerHTML = `<b>assistant:</b> ${built.replace(/\n/g,'<br/>')}`;
+      }
+    });
+  }
+}
+
+(async function init(){
+  document.getElementById('pseudo').value = pseudo || 'Max';
+  await loadModels();
+  if (selectedModel && Array.from(document.getElementById('model').options).find(o => o.value === selectedModel)) {
+    document.getElementById('model').value = selectedModel;
+  }
+  if (pseudo) {
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
+    try { await loadConversations(); } catch {}
+  }
+})();
+</script>
+</body>
+</html>

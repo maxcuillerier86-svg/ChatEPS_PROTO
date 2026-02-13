@@ -1,0 +1,6 @@
+.env
+*.pyc
+__pycache__/
+api/data/
+web/.next/
+web/node_modules/
