@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import decode_token, get_password_hash
+from app.core.security import decode_token
 from app.models.entities import User
 
 
@@ -42,7 +42,7 @@ def get_actor_user(
             email=email,
             full_name=pseudo,
             role="student",
-            hashed_password=get_password_hash("pseudo-only-session"),
+            hashed_password="pseudo-session",
         )
         db.add(user)
         db.commit()

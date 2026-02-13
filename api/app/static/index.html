@@ -62,6 +62,15 @@ let selectedModel = localStorage.getItem('model') || '';
 let currentConversationId = null;
 const PRESET_MODELS = ['gpt-oss:20b', 'llama3.1', 'llama3.2', 'mistral', 'qwen2.5'];
 
+async function readErrorMessage(res){
+  try{
+    const data = await res.json();
+    return data.detail || JSON.stringify(data);
+  }catch{
+    return await res.text();
+  }
+}
+
 function getHeaders(extra = {}) {
   if (!pseudo) throw new Error('Pseudo requis');
   return { 'X-Pseudo': pseudo, ...extra };
@@ -72,7 +81,7 @@ async function api(path, opts={}){
   if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   Object.assign(headers, getHeaders());
   const res = await fetch(path, {...opts, headers});
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await readErrorMessage(res));
   return res;
 }
 
@@ -129,7 +138,7 @@ async function pullCurrentModel(){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({model})
     });
-    if(!res.ok) throw new Error(await res.text());
+    if(!res.ok) throw new Error(await readErrorMessage(res));
     await loadModels();
     document.getElementById('model').value = model;
     selectedModel = model;
