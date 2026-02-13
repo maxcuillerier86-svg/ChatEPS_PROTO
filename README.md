@@ -56,6 +56,8 @@ docker compose up --build
 ```bash
 cd api && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+# Optionnel mais recommandé hors Docker:
+# export OLLAMA_URL=http://localhost:11434
 uvicorn app.main:app --reload --port 8000
 ```
 ```bash
@@ -67,6 +69,8 @@ cd api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+# Optionnel mais recommandé hors Docker:
+$env:OLLAMA_URL="http://localhost:11434"
 uvicorn app.main:app --reload --port 8000
 ```
 ```powershell
@@ -117,6 +121,7 @@ pytest
 - Pull de modèle: endpoint `POST /chat/models/pull` (utilisé par le bouton **Pull modèle**), avec support de saisie **OTHER** (ex: `gpt-oss:20b`).
 
 ## 10) Dépannage rapide
+- `getaddrinfo failed` / hôte `ollama`: vous lancez probablement hors Docker avec une URL Docker. Fixez `OLLAMA_URL=http://localhost:11434` dans l’environnement ou `.env` du dossier `api`.
 - Compatibilité Windows/passlib: la création de session pseudo ne dépend plus de bcrypt (évite les erreurs `trapped error reading bcrypt version`).
 - `WARNING: Invalid HTTP request received.` : souvent causé par un navigateur/extension qui tente HTTPS/WebSocket sur un port HTTP local. Ce warning n’empêche pas le fonctionnement normal de l’API/UI.
 - Si vous lancez uniquement `uvicorn app.main:app --reload --port 8000`, l’UI intégrée est disponible sur `http://127.0.0.1:8000`.

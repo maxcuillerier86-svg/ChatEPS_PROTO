@@ -1,9 +1,11 @@
 import json
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_actor_user
 from app.models.entities import Conversation, Message, TraceEvent, User
@@ -25,7 +27,7 @@ MODE_SYSTEM = {
 
 @router.get("/models")
 async def models():
-    return {"models": await list_models()}
+    return {"models": await list_models(), "ollama_url": settings.ollama_url}
 
 
 @router.post("/models/pull")
@@ -37,7 +39,10 @@ async def pull_chat_model(payload: dict):
         result = await pull_model(model)
         return {"ok": True, "model": model, "result": result}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Échec pull modèle: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Échec pull modèle ({settings.ollama_url}). Vérifiez qu'Ollama tourne sur ce endpoint. Détail: {exc}",
+        )
 
 
 @router.post("/conversations")
@@ -80,12 +85,15 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
     citations = []
     context = ""
     if payload.use_rag:
-        hits = await retrieve(payload.content, payload.collection_ids)
-        citations = [
-            {"doc_id": h["doc_id"], "title": h["title"], "page": h["page"], "excerpt": h["text"][:280]}
-            for h in hits
-        ]
-        context = "\n\nSources PDF:\n" + "\n".join([f"- {c['title']} p.{c['page']}: {c['excerpt']}" for c in citations])
+        try:
+            hits = await retrieve(payload.content, payload.collection_ids)
+            citations = [
+                {"doc_id": h["doc_id"], "title": h["title"], "page": h["page"], "excerpt": h["text"][:280]}
+                for h in hits
+            ]
+            context = "\n\nSources PDF:\n" + "\n".join([f"- {c['title']} p.{c['page']}: {c['excerpt']}" for c in citations])
+        except Exception:
+            context = "\n\nAucune source disponible: Ollama/Qdrant indisponible ou non configuré."
 
     history = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at.asc()).all()
     model_messages = [{"role": "system", "content": MODE_SYSTEM.get(conv.mode, MODE_SYSTEM["exploration_novice"])}]
@@ -95,38 +103,44 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
 
     async def event_stream():
         collected = ""
-        async for line in chat_stream(model_messages, model=payload.model):
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            token = obj.get("message", {}).get("content", "")
-            if token:
-                collected += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
-            if obj.get("done"):
-                ai_msg = Message(
-                    conversation_id=conv.id,
-                    role="assistant",
-                    content=collected,
-                    metadata_json={"citations": citations, "model": payload.model},
-                )
-                db.add(ai_msg)
-                db.commit()
-                log_event(
-                    db,
-                    user.id,
-                    "chat_turn",
-                    {
-                        "conversation_id": conv.id,
-                        "has_citations": bool(citations),
-                        "prompt_length": len(payload.content),
-                        "mode": conv.mode,
-                        "model": payload.model,
-                        "pseudo": user.full_name,
-                    },
-                    conversation_id=conv.id,
-                )
-                yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
+        try:
+            async for line in chat_stream(model_messages, model=payload.model):
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                token = obj.get("message", {}).get("content", "")
+                if token:
+                    collected += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if obj.get("done"):
+                    ai_msg = Message(
+                        conversation_id=conv.id,
+                        role="assistant",
+                        content=collected,
+                        metadata_json={"citations": citations, "model": payload.model},
+                    )
+                    db.add(ai_msg)
+                    db.commit()
+                    log_event(
+                        db,
+                        user.id,
+                        "chat_turn",
+                        {
+                            "conversation_id": conv.id,
+                            "has_citations": bool(citations),
+                            "prompt_length": len(payload.content),
+                            "mode": conv.mode,
+                            "model": payload.model,
+                            "pseudo": user.full_name,
+                        },
+                        conversation_id=conv.id,
+                    )
+                    yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
+        except httpx.ConnectError as exc:
+            msg = f"Impossible de joindre Ollama ({settings.ollama_url}). Vérifiez qu'il tourne. Détail: {exc}"
+            yield f"data: {json.dumps({'error': msg, 'done': True})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': f'Erreur chat: {exc}', 'done': True})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
