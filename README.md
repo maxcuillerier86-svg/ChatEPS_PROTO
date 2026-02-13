@@ -47,7 +47,8 @@ artefacts,traces)
 cp .env.example .env
 docker compose up --build
 ```
-- Web: http://localhost:3000
+- UI FastAPI intégrée: http://localhost:8000
+- Web Next.js (optionnel): http://localhost:3000
 - API docs: http://localhost:8000/docs
 
 ## 4) Lancement dev sans Docker
@@ -107,3 +108,9 @@ pytest
 3. Étudiant lance un chat, itère, puis crée artefact.
 4. Prof consulte dashboard cohorte et traces.
 5. Export possible via endpoints dashboard (extension prévue CSV/JSON).
+
+
+## 9) Dépannage rapide
+- `WARNING: Invalid HTTP request received.` : souvent causé par un navigateur/extension qui tente HTTPS/WebSocket sur un port HTTP local. Ce warning n’empêche pas le fonctionnement normal de l’API/UI.
+- Si vous lancez uniquement `uvicorn app.main:app --reload --port 8000`, l’UI intégrée est disponible sur `http://127.0.0.1:8000`.
+- L’ancienne UI Next.js reste disponible sur `http://localhost:3000` si vous lancez aussi le frontend.

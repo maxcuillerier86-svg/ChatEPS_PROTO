@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Co-PE Local UI</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;color:#16202a}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    input,textarea,button,select{padding:8px;border:1px solid #ccd3dd;border-radius:8px}
+    button{background:#2458d3;color:#fff;cursor:pointer}
+    .grid{display:grid;grid-template-columns:1fr 2fr;gap:12px}
+    .msg{padding:8px;border-bottom:1px solid #eef2f6}
+    .assistant{background:#f3f7ff}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1 style="margin:0">Co-PE – Interface locale</h1>
+    <p>Connectez-vous, créez une conversation, puis discutez avec l’IA.</p>
+  </div>
+
+  <div class="card">
+    <h3>Connexion</h3>
+    <input id="email" value="prof@cope.local" />
+    <input id="password" type="password" value="password123" />
+    <button onclick="login()">Se connecter</button>
+    <span id="login-status"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Conversations</h3>
+      <button onclick="createConversation()">Nouveau fil</button>
+      <div id="conversations"></div>
+    </div>
+
+    <div class="card">
+      <h3>Chat</h3>
+      <div id="messages" style="min-height:280px;max-height:420px;overflow:auto"></div>
+      <textarea id="prompt" rows="4" style="width:100%">Aide-moi à créer un plan de séance volleyball.</textarea>
+      <div style="margin-top:8px">
+        <button onclick="sendMessage()">Envoyer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('token') || '';
+let currentConversationId = null;
+
+async function api(path, opts={}){
+  const headers = opts.headers || {};
+  if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(API + path, {...opts, headers});
+  if (!res.ok) throw new Error(await res.text());
+  return res;
+}
+
+async function login(){
+  try{
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const res = await fetch('/auth/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email,password})});
+    if(!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    token = data.access_token;
+    localStorage.setItem('token', token);
+    document.getElementById('login-status').innerText = '✅ Connecté';
+    loadConversations();
+  }catch(e){
+    document.getElementById('login-status').innerText = '❌ ' + e.message;
+  }
+}
+
+async function createConversation(){
+  const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:'Nouveau fil', mode:'co_design'})});
+  const conv = await res.json();
+  currentConversationId = conv.id;
+  await loadConversations();
+  await loadMessages(conv.id);
+}
+
+async function loadConversations(){
+  const res = await api('/chat/conversations');
+  const items = await res.json();
+  const el = document.getElementById('conversations');
+  el.innerHTML = '';
+  items.forEach(c=>{
+    const b = document.createElement('button');
+    b.textContent = `${c.title} (${c.mode})`;
+    b.style.display='block'; b.style.margin='8px 0';
+    b.onclick = ()=> loadMessages(c.id);
+    el.appendChild(b);
+  });
+}
+
+async function loadMessages(id){
+  currentConversationId = id;
+  const res = await api(`/chat/conversations/${id}/messages`);
+  const msgs = await res.json();
+  const box = document.getElementById('messages');
+  box.innerHTML='';
+  msgs.forEach(m=>appendMessage(m.role, m.content));
+}
+
+function appendMessage(role, content){
+  const box = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'assistant' ? 'assistant' : '');
+  div.innerHTML = `<b>${role}:</b> ${content.replace(/\n/g,'<br/>')}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+async function sendMessage(){
+  if(!currentConversationId) return alert('Créez ou sélectionnez une conversation');
+  const content = document.getElementById('prompt').value;
+  appendMessage('user', content);
+  const aiNode = appendMessage('assistant', '');
+
+  const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
+    body: JSON.stringify({content, use_rag:true, collection_ids:[]})
+  });
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    const chunk = decoder.decode(value);
+    chunk.split('\n\n').forEach(line=>{
+      if(!line.startsWith('data:')) return;
+      const data = JSON.parse(line.slice(5).trim());
+      if(data.token){
+        aiNode.innerHTML = `<b>assistant:</b> ${(aiNode.textContent.replace('assistant: ','') + data.token).replace(/\n/g,'<br/>')}`;
+      }
+    });
+  }
+}
+</script>
+</body>
+</html>
