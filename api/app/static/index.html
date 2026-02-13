@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Co-PE Local UI</title>
+  <title>chat-EPS</title>
   <style>
     body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;color:#16202a}
     .wrap{max-width:1220px;margin:0 auto;padding:16px}
@@ -21,7 +21,7 @@
 <body>
 <div class="wrap">
   <div class="card">
-    <h1 style="margin:0">Co-PE – Interface locale</h1>
+    <h1 style="margin:0">chat-EPS – Interface locale</h1>
     <p>Utilisez un pseudo, stockez des PDF localement et discutez avec l’IA + vos sources.</p>
   </div>
 
@@ -210,8 +210,10 @@ function renderPdfs(items){
   items.forEach(d=>{
     const row = document.createElement('div');
     row.style.marginBottom = '6px';
-    const checked = selectedPdfIds.includes(d.id) ? 'checked' : '';
-    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked}/> <b>${d.title}</b> — ${d.status}</label>`;
+    const enabled = d.status === 'ready';
+    const checked = enabled && selectedPdfIds.includes(d.id) ? 'checked' : '';
+    const disabled = enabled ? '' : 'disabled';
+    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}</label>`;
     box.appendChild(row);
   });
   box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
@@ -230,7 +232,7 @@ async function refreshPdfs(){
   try{
     const res = await api('/library/documents');
     const docs = await res.json();
-    selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id));
+    selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id && d.status === "ready"));
     renderPdfs(docs);
   }catch(e){
     document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
@@ -281,7 +283,10 @@ function appendMessage(role, content){
 }
 
 async function sendMessage(){
-  if(!currentConversationId) return alert('Créez ou sélectionnez une conversation');
+  if(!currentConversationId){
+    await createConversation();
+    if(!currentConversationId) return;
+  }
   const content = document.getElementById('prompt').value;
   const useRag = document.getElementById('use-rag').checked;
   selectedModel = document.getElementById('model').value;
