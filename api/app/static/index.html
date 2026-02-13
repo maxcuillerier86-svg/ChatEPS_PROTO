@@ -13,21 +13,29 @@
     .grid{display:grid;grid-template-columns:1fr 2fr;gap:12px}
     .msg{padding:8px;border-bottom:1px solid #eef2f6}
     .assistant{background:#f3f7ff}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{color:#667085;font-size:13px}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1 style="margin:0">Co-PE – Interface locale</h1>
-    <p>Utilisez un pseudo, choisissez un modèle Ollama et discutez.</p>
+    <p>Utilisez un pseudo, choisissez/téléchargez un modèle Ollama et discutez.</p>
   </div>
 
   <div class="card">
     <h3>Session</h3>
-    <input id="pseudo" placeholder="Votre pseudo" value="Max" />
-    <select id="model"></select>
-    <button onclick="startSession()">Démarrer</button>
-    <span id="session-status"></span>
+    <div class="row">
+      <input id="pseudo" placeholder="Votre pseudo" value="Max" />
+      <select id="model"></select>
+      <input id="other-model" placeholder="OTHER: ex. gpt-oss:20b" style="min-width:220px" />
+      <button onclick="setOtherModel()">Utiliser OTHER</button>
+      <button onclick="pullCurrentModel()">Pull modèle</button>
+      <button onclick="startSession()">Démarrer</button>
+      <span id="session-status"></span>
+    </div>
+    <p class="muted">Presets inclus: gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. Le bouton Pull lance `ollama pull` via API locale.</p>
   </div>
 
   <div class="grid">
@@ -52,6 +60,7 @@
 let pseudo = localStorage.getItem('pseudo') || '';
 let selectedModel = localStorage.getItem('model') || '';
 let currentConversationId = null;
+const PRESET_MODELS = ['gpt-oss:20b', 'llama3.1', 'llama3.2', 'mistral', 'qwen2.5'];
 
 function getHeaders(extra = {}) {
   if (!pseudo) throw new Error('Pseudo requis');
@@ -67,25 +76,67 @@ async function api(path, opts={}){
   return res;
 }
 
-async function loadModels() {
+function fillModelSelect(models){
   const select = document.getElementById('model');
   select.innerHTML = '';
+  const merged = [...new Set([...PRESET_MODELS, ...(models||[])])];
+  merged.forEach((m) => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    select.appendChild(opt);
+  });
+  if (selectedModel && merged.includes(selectedModel)) {
+    select.value = selectedModel;
+  } else if (merged.length) {
+    select.value = merged[0];
+  }
+}
+
+async function loadModels() {
   try {
     const res = await fetch('/chat/models');
     const data = await res.json();
-    (data.models || ['llama3.1']).forEach((m) => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      select.appendChild(opt);
-    });
-    if (selectedModel) select.value = selectedModel;
-    if (!select.value && select.options.length) select.value = select.options[0].value;
+    fillModelSelect(data.models || []);
   } catch {
+    fillModelSelect([]);
+  }
+}
+
+function setOtherModel(){
+  const other = document.getElementById('other-model').value.trim();
+  if(!other) return;
+  const select = document.getElementById('model');
+  if(!Array.from(select.options).find(o => o.value === other)){
     const opt = document.createElement('option');
-    opt.value = 'llama3.1';
-    opt.textContent = 'llama3.1';
+    opt.value = other;
+    opt.textContent = other + ' (OTHER)';
     select.appendChild(opt);
+  }
+  select.value = other;
+  selectedModel = other;
+  localStorage.setItem('model', selectedModel);
+  document.getElementById('session-status').innerText = `🧠 Modèle sélectionné: ${selectedModel}`;
+}
+
+async function pullCurrentModel(){
+  try{
+    const model = document.getElementById('model').value || document.getElementById('other-model').value.trim();
+    if(!model) throw new Error('Sélectionnez ou saisissez un modèle');
+    document.getElementById('session-status').innerText = `⏳ Pull en cours: ${model}`;
+    const res = await fetch('/chat/models/pull', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    await loadModels();
+    document.getElementById('model').value = model;
+    selectedModel = model;
+    localStorage.setItem('model', selectedModel);
+    document.getElementById('session-status').innerText = `✅ Modèle prêt: ${model}`;
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
   }
 }
 
@@ -96,7 +147,7 @@ async function startSession(){
     if(!pseudo) throw new Error('Pseudo obligatoire');
     localStorage.setItem('pseudo', pseudo);
     localStorage.setItem('model', selectedModel);
-    document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo} | modèle: ${selectedModel}`;
     await loadConversations();
   }catch(e){
     document.getElementById('session-status').innerText = '❌ ' + e.message;
@@ -180,6 +231,9 @@ async function sendMessage(){
 (async function init(){
   document.getElementById('pseudo').value = pseudo || 'Max';
   await loadModels();
+  if (selectedModel && Array.from(document.getElementById('model').options).find(o => o.value === selectedModel)) {
+    document.getElementById('model').value = selectedModel;
+  }
   if (pseudo) {
     document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
     try { await loadConversations(); } catch {}

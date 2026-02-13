@@ -114,6 +114,7 @@ pytest
 - Pseudo (pas de mot de passe): l’UI envoie `X-Pseudo` et le backend crée/réutilise automatiquement le profil local associé.
 - Les conversations listées sont celles créées par le pseudo actif.
 - Sélection de modèle: endpoint `GET /chat/models` + sélection dans l’UI avant envoi.
+- Pull de modèle: endpoint `POST /chat/models/pull` (utilisé par le bouton **Pull modèle**), avec support de saisie **OTHER** (ex: `gpt-oss:20b`).
 
 ## 10) Dépannage rapide
 - `WARNING: Invalid HTTP request received.` : souvent causé par un navigateur/extension qui tente HTTPS/WebSocket sur un port HTTP local. Ce warning n’empêche pas le fonctionnement normal de l’API/UI.

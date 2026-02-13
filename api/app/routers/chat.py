@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.deps import get_actor_user
 from app.models.entities import Conversation, Message, TraceEvent, User
 from app.schemas.chat import ConversationCreate, MessageIn
-from app.services.ollama import chat_stream, list_models
+from app.services.ollama import chat_stream, list_models, pull_model
 from app.services.rag import retrieve
 from app.services.tracing import log_event
 
@@ -26,6 +26,18 @@ MODE_SYSTEM = {
 @router.get("/models")
 async def models():
     return {"models": await list_models()}
+
+
+@router.post("/models/pull")
+async def pull_chat_model(payload: dict):
+    model = (payload.get("model") or "").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="Nom de modèle requis")
+    try:
+        result = await pull_model(model)
+        return {"ok": True, "model": model, "result": result}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Échec pull modèle: {exc}")
 
 
 @router.post("/conversations")
