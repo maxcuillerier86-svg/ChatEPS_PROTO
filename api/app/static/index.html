@@ -284,15 +284,48 @@ async function refreshPdfs(){
   }
 }
 
-function addConversationButton(c){
+async function deleteConversation(id){
+  if(!confirm('Supprimer ce fil de discussion ?')) return;
+  try{
+    await api(`/chat/conversations/${id}`, {method:'DELETE'});
+    if(currentConversationId === id){
+      currentConversationId = null;
+      document.getElementById('messages').innerHTML = '';
+    }
+    await loadConversations();
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+function renderConversationItem(container, c, prepend=false){
   const id = Number(c?.id);
   if(!Number.isFinite(id)) return;
+  const row = document.createElement('div');
+  row.style.display='flex';
+  row.style.gap='6px';
+  row.style.margin='8px 0';
+
+  const openBtn = document.createElement('button');
+  openBtn.textContent = `${c.title || 'Sans titre'} (${c.mode || 'co_design'})`;
+  openBtn.style.flex='1';
+  openBtn.style.textAlign='left';
+  openBtn.onclick = ()=> loadMessages(id);
+
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '🗑';
+  delBtn.title = 'Supprimer le fil';
+  delBtn.style.background = '#b42318';
+  delBtn.onclick = ()=> deleteConversation(id);
+
+  row.appendChild(openBtn);
+  row.appendChild(delBtn);
+  if(prepend) container.prepend(row); else container.appendChild(row);
+}
+
+function addConversationButton(c){
   const el = document.getElementById('conversations');
-  const b = document.createElement('button');
-  b.textContent = `${c.title || 'Nouveau fil'} (${c.mode || 'co_design'})`;
-  b.style.display='block'; b.style.margin='8px 0';
-  b.onclick = ()=> loadMessages(id);
-  el.prepend(b);
+  renderConversationItem(el, c, true);
 }
 
 function normalizeConversationPayload(data){
@@ -332,15 +365,7 @@ async function loadConversations(){
   const items = Array.isArray(raw) ? raw : (raw?.items || []);
   const el = document.getElementById('conversations');
   el.innerHTML = '';
-  items.forEach(c=>{
-    const id = Number(c?.id);
-    if(!Number.isFinite(id)) return;
-    const b = document.createElement('button');
-    b.textContent = `${c.title || 'Sans titre'} (${c.mode || 'co_design'})`;
-    b.style.display='block'; b.style.margin='8px 0';
-    b.onclick = ()=> loadMessages(id);
-    el.appendChild(b);
-  });
+  items.forEach(c=> renderConversationItem(el, c));
   return items.filter(c=>Number.isFinite(Number(c?.id)));
 }
 
