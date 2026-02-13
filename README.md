@@ -92,6 +92,7 @@ PDF de démo: `guide_didactique.pdf`, `evaluation_eps.pdf` dans `api/data/pdfs`.
 cd api
 pytest
 ```
+> Si vous voyez `ModuleNotFoundError: app.main` sous Windows, exécutez bien `pytest` depuis `api/` (pas la racine). Le projet inclut `api/pytest.ini` + `api/tests/conftest.py` pour forcer le `PYTHONPATH` local.
 
 ## 7) Sécurité et confidentialité
 - Aucun appel cloud imposé; services locaux uniquement.
