@@ -12,6 +12,7 @@ class MessageIn(BaseModel):
     content: str
     use_rag: bool = True
     collection_ids: list[int] = []
+    model: str | None = None
 
 
 class MessageOut(BaseModel):

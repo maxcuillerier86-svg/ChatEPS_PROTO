@@ -5,10 +5,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
-from app.models.entities import Conversation, Message, User
+from app.core.deps import get_actor_user
+from app.models.entities import Conversation, Message, TraceEvent, User
 from app.schemas.chat import ConversationCreate, MessageIn
-from app.services.ollama import chat_stream
+from app.services.ollama import chat_stream, list_models
 from app.services.rag import retrieve
 from app.services.tracing import log_event
 
@@ -23,28 +23,40 @@ MODE_SYSTEM = {
 }
 
 
+@router.get("/models")
+async def models():
+    return {"models": await list_models()}
+
+
 @router.post("/conversations")
-def create_conversation(payload: ConversationCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_conversation(payload: ConversationCreate, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     conv = Conversation(title=payload.title, mode=payload.mode, type=payload.type, course_id=payload.course_id)
     db.add(conv)
     db.commit()
     db.refresh(conv)
-    log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv.mode})
+    log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv.mode, "pseudo": user.full_name})
     return conv
 
 
 @router.get("/conversations")
-def list_conversations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.query(Conversation).order_by(Conversation.updated_at.desc()).all()
+def list_conversations(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
+    created_ids = [
+        e.payload.get("conversation_id")
+        for e in db.query(TraceEvent).filter(TraceEvent.user_id == user.id, TraceEvent.event_type == "conversation_create").all()
+        if e.payload.get("conversation_id")
+    ]
+    if not created_ids:
+        return []
+    return db.query(Conversation).filter(Conversation.id.in_(created_ids)).order_by(Conversation.updated_at.desc()).all()
 
 
 @router.get("/conversations/{conversation_id}/messages")
-def list_messages(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_messages(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     return db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at.asc()).all()
 
 
 @router.post("/conversations/{conversation_id}/stream")
-async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(404, "Conversation introuvable")
@@ -71,7 +83,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
 
     async def event_stream():
         collected = ""
-        async for line in chat_stream(model_messages):
+        async for line in chat_stream(model_messages, model=payload.model):
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError:
@@ -85,7 +97,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     conversation_id=conv.id,
                     role="assistant",
                     content=collected,
-                    metadata_json={"citations": citations},
+                    metadata_json={"citations": citations, "model": payload.model},
                 )
                 db.add(ai_msg)
                 db.commit()
@@ -98,6 +110,8 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                         "has_citations": bool(citations),
                         "prompt_length": len(payload.content),
                         "mode": conv.mode,
+                        "model": payload.model,
+                        "pseudo": user.full_name,
                     },
                     conversation_id=conv.id,
                 )

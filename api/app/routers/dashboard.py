@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_roles
+from app.core.deps import get_actor_user
 from app.models.entities import Consent, TraceEvent, User
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 @router.get("/me")
-def my_progress(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def my_progress(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     events = db.query(TraceEvent).filter(TraceEvent.user_id == user.id).all()
     counts = Counter([e.event_type for e in events])
     return {
@@ -26,7 +26,7 @@ def my_progress(db: Session = Depends(get_db), user: User = Depends(get_current_
 
 
 @router.get("/cohort")
-def cohort_progress(db: Session = Depends(get_db), user: User = Depends(require_roles("teacher", "admin"))):
+def cohort_progress(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     events = db.query(TraceEvent).all()
     by_user = {}
     for e in events:
@@ -40,7 +40,7 @@ def cohort_progress(db: Session = Depends(get_db), user: User = Depends(require_
 
 
 @router.post("/consent")
-def set_consent(accepted: bool, details: str = "", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def set_consent(accepted: bool, details: str = "", db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     consent = db.query(Consent).filter(Consent.user_id == user.id).first()
     if not consent:
         consent = Consent(user_id=user.id, accepted=accepted, details=details)

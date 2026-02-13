@@ -13,6 +13,16 @@ async def chat_stream(messages: list[dict], model: str | None = None):
                     yield line
 
 
+async def list_models() -> list[str]:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{settings.ollama_url}/api/tags")
+            resp.raise_for_status()
+            return [m.get("name") for m in resp.json().get("models", []) if m.get("name")]
+    except Exception:
+        return [settings.ollama_chat_model]
+
+
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     embeddings = []
     async with httpx.AsyncClient(timeout=120) as client:

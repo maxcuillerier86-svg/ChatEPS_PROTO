@@ -103,14 +103,19 @@ pytest
 - Séparation logique cours/cohorte via `course_id` (à renforcer en ACL fines).
 
 ## 8) Scénario démo recommandé
-1. Login professeur, créer conversation mode `co_design`.
+1. Ouvrir l’UI, saisir un pseudo, choisir un modèle Ollama (ex: `gpt-oss:20b`, `llama3.1`), puis créer une conversation `co_design`.
 2. Uploader des PDFs dans Bibliothèque.
 3. Étudiant lance un chat, itère, puis crée artefact.
 4. Prof consulte dashboard cohorte et traces.
 5. Export possible via endpoints dashboard (extension prévue CSV/JSON).
 
 
-## 9) Dépannage rapide
+## 9) Session locale sans authentification
+- Pseudo (pas de mot de passe): l’UI envoie `X-Pseudo` et le backend crée/réutilise automatiquement le profil local associé.
+- Les conversations listées sont celles créées par le pseudo actif.
+- Sélection de modèle: endpoint `GET /chat/models` + sélection dans l’UI avant envoi.
+
+## 10) Dépannage rapide
 - `WARNING: Invalid HTTP request received.` : souvent causé par un navigateur/extension qui tente HTTPS/WebSocket sur un port HTTP local. Ce warning n’empêche pas le fonctionnement normal de l’API/UI.
 - Si vous lancez uniquement `uvicorn app.main:app --reload --port 8000`, l’UI intégrée est disponible sur `http://127.0.0.1:8000`.
 - L’ancienne UI Next.js reste disponible sur `http://localhost:3000` si vous lancez aussi le frontend.

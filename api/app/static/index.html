@@ -19,15 +19,15 @@
 <div class="wrap">
   <div class="card">
     <h1 style="margin:0">Co-PE – Interface locale</h1>
-    <p>Connectez-vous, créez une conversation, puis discutez avec l’IA.</p>
+    <p>Utilisez un pseudo, choisissez un modèle Ollama et discutez.</p>
   </div>
 
   <div class="card">
-    <h3>Connexion</h3>
-    <input id="email" value="prof@cope.local" />
-    <input id="password" type="password" value="password123" />
-    <button onclick="login()">Se connecter</button>
-    <span id="login-status"></span>
+    <h3>Session</h3>
+    <input id="pseudo" placeholder="Votre pseudo" value="Max" />
+    <select id="model"></select>
+    <button onclick="startSession()">Démarrer</button>
+    <span id="session-status"></span>
   </div>
 
   <div class="grid">
@@ -49,37 +49,62 @@
 </div>
 
 <script>
-const API = '';
-let token = localStorage.getItem('token') || '';
+let pseudo = localStorage.getItem('pseudo') || '';
+let selectedModel = localStorage.getItem('model') || '';
 let currentConversationId = null;
+
+function getHeaders(extra = {}) {
+  if (!pseudo) throw new Error('Pseudo requis');
+  return { 'X-Pseudo': pseudo, ...extra };
+}
 
 async function api(path, opts={}){
   const headers = opts.headers || {};
   if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(API + path, {...opts, headers});
+  Object.assign(headers, getHeaders());
+  const res = await fetch(path, {...opts, headers});
   if (!res.ok) throw new Error(await res.text());
   return res;
 }
 
-async function login(){
-  try{
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    const res = await fetch('/auth/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email,password})});
-    if(!res.ok) throw new Error(await res.text());
+async function loadModels() {
+  const select = document.getElementById('model');
+  select.innerHTML = '';
+  try {
+    const res = await fetch('/chat/models');
     const data = await res.json();
-    token = data.access_token;
-    localStorage.setItem('token', token);
-    document.getElementById('login-status').innerText = '✅ Connecté';
-    loadConversations();
+    (data.models || ['llama3.1']).forEach((m) => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      select.appendChild(opt);
+    });
+    if (selectedModel) select.value = selectedModel;
+    if (!select.value && select.options.length) select.value = select.options[0].value;
+  } catch {
+    const opt = document.createElement('option');
+    opt.value = 'llama3.1';
+    opt.textContent = 'llama3.1';
+    select.appendChild(opt);
+  }
+}
+
+async function startSession(){
+  try{
+    pseudo = document.getElementById('pseudo').value.trim();
+    selectedModel = document.getElementById('model').value;
+    if(!pseudo) throw new Error('Pseudo obligatoire');
+    localStorage.setItem('pseudo', pseudo);
+    localStorage.setItem('model', selectedModel);
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
+    await loadConversations();
   }catch(e){
-    document.getElementById('login-status').innerText = '❌ ' + e.message;
+    document.getElementById('session-status').innerText = '❌ ' + e.message;
   }
 }
 
 async function createConversation(){
-  const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:'Nouveau fil', mode:'co_design'})});
+  const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
   const conv = await res.json();
   currentConversationId = conv.id;
   await loadConversations();
@@ -113,7 +138,7 @@ function appendMessage(role, content){
   const box = document.getElementById('messages');
   const div = document.createElement('div');
   div.className = 'msg ' + (role === 'assistant' ? 'assistant' : '');
-  div.innerHTML = `<b>${role}:</b> ${content.replace(/\n/g,'<br/>')}`;
+  div.innerHTML = `<b>${role}:</b> ${String(content).replace(/\n/g,'<br/>')}`;
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
   return div;
@@ -122,17 +147,21 @@ function appendMessage(role, content){
 async function sendMessage(){
   if(!currentConversationId) return alert('Créez ou sélectionnez une conversation');
   const content = document.getElementById('prompt').value;
+  selectedModel = document.getElementById('model').value;
+  localStorage.setItem('model', selectedModel);
+
   appendMessage('user', content);
   const aiNode = appendMessage('assistant', '');
 
   const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-    body: JSON.stringify({content, use_rag:true, collection_ids:[]})
+    headers:getHeaders({'Content-Type':'application/json'}),
+    body: JSON.stringify({content, use_rag:true, collection_ids:[], model:selectedModel})
   });
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let built = '';
   while(true){
     const {done, value} = await reader.read();
     if(done) break;
@@ -141,11 +170,21 @@ async function sendMessage(){
       if(!line.startsWith('data:')) return;
       const data = JSON.parse(line.slice(5).trim());
       if(data.token){
-        aiNode.innerHTML = `<b>assistant:</b> ${(aiNode.textContent.replace('assistant: ','') + data.token).replace(/\n/g,'<br/>')}`;
+        built += data.token;
+        aiNode.innerHTML = `<b>assistant:</b> ${built.replace(/\n/g,'<br/>')}`;
       }
     });
   }
 }
+
+(async function init(){
+  document.getElementById('pseudo').value = pseudo || 'Max';
+  await loadModels();
+  if (pseudo) {
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
+    try { await loadConversations(); } catch {}
+  }
+})();
 </script>
 </body>
 </html>

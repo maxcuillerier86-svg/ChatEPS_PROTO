@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_actor_user
 from app.models.entities import PdfDocument, User
 from app.schemas.pdf import PdfOut
 from app.services.rag import ingest_document
@@ -22,7 +22,7 @@ async def upload_pdf(
     tags: str = Form(""),
     course_id: int | None = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_actor_user),
 ):
     if not file.filename.lower().endswith(".pdf"):
         from fastapi import HTTPException
@@ -61,5 +61,5 @@ async def upload_pdf(
 
 
 @router.get("/documents", response_model=list[PdfOut])
-def list_docs(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_docs(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     return db.query(PdfDocument).all()
