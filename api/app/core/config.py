@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me"
     access_token_expire_minutes: int = 60 * 8
     database_url: str = "sqlite:///./data/cope.db"
-    qdrant_url: str = "http://qdrant:6333"
+    qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "pdf_chunks"
     ollama_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1"

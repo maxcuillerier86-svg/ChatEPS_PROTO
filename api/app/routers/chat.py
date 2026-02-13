@@ -27,7 +27,7 @@ def _conversation_out(conv: Conversation) -> dict:
     return {
         "id": conv.id,
         "title": conv.title,
-        "mode": conv.mode,
+        "mode": conv_mode,
         "type": conv.type,
         "course_id": conv.course_id,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
@@ -69,7 +69,7 @@ def create_conversation(payload: ConversationCreate, db: Session = Depends(get_d
     db.add(conv)
     db.commit()
     db.refresh(conv)
-    log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv.mode, "pseudo": user.full_name})
+    log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv_mode, "pseudo": user.full_name})
     return _conversation_out(conv)
 
 
@@ -98,6 +98,11 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
     if not conv:
         raise HTTPException(404, "Conversation introuvable")
 
+    conv_id = int(conv.id)
+    conv_mode = str(conv.mode)
+    user_id = int(user.id)
+    user_name = str(user.full_name)
+
     ok, err = await check_ollama()
     if not ok:
         raise HTTPException(
@@ -105,7 +110,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
             detail=f"Ollama inaccessible ({err}). Définissez OLLAMA_URL=http://localhost:11434 en local.",
         )
 
-    user_msg = Message(conversation_id=conv.id, user_id=user.id, role="user", content=payload.content)
+    user_msg = Message(conversation_id=conv_id, user_id=user_id, role="user", content=payload.content)
     db.add(user_msg)
     db.commit()
 
@@ -122,8 +127,8 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
         except Exception:
             context = "\n\nNote: RAG indisponible (index/embeddings). Réponse sans sources PDF pour ce tour."
 
-    history = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at.asc()).all()
-    model_messages = [{"role": "system", "content": MODE_SYSTEM.get(conv.mode, MODE_SYSTEM["exploration_novice"])}]
+    history = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.created_at.asc()).all()
+    model_messages = [{"role": "system", "content": MODE_SYSTEM.get(conv_mode, MODE_SYSTEM["exploration_novice"])}]
     for m in history[-12:]:
         model_messages.append({"role": m.role, "content": m.content})
     model_messages[-1]["content"] = payload.content + context + "\nSi aucune source fournie, indique-le explicitement. Termine par auto-évaluation 1-5."
@@ -142,7 +147,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if obj.get("done"):
                     ai_msg = Message(
-                        conversation_id=conv.id,
+                        conversation_id=conv_id,
                         role="assistant",
                         content=collected,
                         metadata_json={"citations": citations, "model": payload.model},
@@ -151,17 +156,17 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     db.commit()
                     log_event(
                         db,
-                        user.id,
+                        user_id,
                         "chat_turn",
                         {
-                            "conversation_id": conv.id,
+                            "conversation_id": conv_id,
                             "has_citations": bool(citations),
                             "prompt_length": len(payload.content),
-                            "mode": conv.mode,
+                            "mode": conv_mode,
                             "model": payload.model,
-                            "pseudo": user.full_name,
+                            "pseudo": user_name,
                         },
-                        conversation_id=conv.id,
+                        conversation_id=conv_id,
                     )
                     yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
         except Exception as exc:
