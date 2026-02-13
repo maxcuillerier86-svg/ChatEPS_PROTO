@@ -314,6 +314,9 @@ async function sendMessage(){
         built += data.token;
         aiNode.innerHTML = `<b>assistant:</b> ${built.replace(/\n/g,'<br/>')}`;
       }
+      if(data.error){
+        aiNode.innerHTML = `<b>assistant:</b> ❌ ${data.error}`;
+      }
     });
   }
 }

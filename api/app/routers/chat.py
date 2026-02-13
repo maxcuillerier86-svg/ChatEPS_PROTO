@@ -105,38 +105,41 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
 
     async def event_stream():
         collected = ""
-        async for line in chat_stream(model_messages, model=payload.model):
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            token = obj.get("message", {}).get("content", "")
-            if token:
-                collected += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
-            if obj.get("done"):
-                ai_msg = Message(
-                    conversation_id=conv.id,
-                    role="assistant",
-                    content=collected,
-                    metadata_json={"citations": citations, "model": payload.model},
-                )
-                db.add(ai_msg)
-                db.commit()
-                log_event(
-                    db,
-                    user.id,
-                    "chat_turn",
-                    {
-                        "conversation_id": conv.id,
-                        "has_citations": bool(citations),
-                        "prompt_length": len(payload.content),
-                        "mode": conv.mode,
-                        "model": payload.model,
-                        "pseudo": user.full_name,
-                    },
-                    conversation_id=conv.id,
-                )
-                yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
+        try:
+            async for line in chat_stream(model_messages, model=payload.model):
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                token = obj.get("message", {}).get("content", "")
+                if token:
+                    collected += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if obj.get("done"):
+                    ai_msg = Message(
+                        conversation_id=conv.id,
+                        role="assistant",
+                        content=collected,
+                        metadata_json={"citations": citations, "model": payload.model},
+                    )
+                    db.add(ai_msg)
+                    db.commit()
+                    log_event(
+                        db,
+                        user.id,
+                        "chat_turn",
+                        {
+                            "conversation_id": conv.id,
+                            "has_citations": bool(citations),
+                            "prompt_length": len(payload.content),
+                            "mode": conv.mode,
+                            "model": payload.model,
+                            "pseudo": user.full_name,
+                        },
+                        conversation_id=conv.id,
+                    )
+                    yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': f'Échec chat Ollama: {exc}'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

@@ -112,12 +112,14 @@ pytest
 
 ## 9) Session locale sans authentification
 - Bibliothèque PDF locale (UI): upload de PDF, stockage local, sélection des documents puis chat RAG ciblé sur ces PDF.
+- Si l’ingestion échoue (modèle d'embeddings indisponible), le document passe en statut `failed` au lieu de casser le serveur.
 - Pseudo (pas de mot de passe): l’UI envoie `X-Pseudo` et le backend crée/réutilise automatiquement le profil local associé.
 - Les conversations listées sont celles créées par le pseudo actif.
 - Sélection de modèle: endpoint `GET /chat/models` + sélection dans l’UI avant envoi.
 - Pull de modèle: endpoint `POST /chat/models/pull` (utilisé par le bouton **Pull modèle**), avec support de saisie **OTHER** (ex: `gpt-oss:20b`).
 
 ## 10) Dépannage rapide
+- Compatibilité embeddings Ollama: le backend tente `/api/embeddings` puis bascule automatiquement vers `/api/embed` si nécessaire.
 - Local (hors Docker): `OLLAMA_URL` doit pointer vers `http://localhost:11434`.
 - Docker compose: la variable est surchargée vers `http://ollama:11434` automatiquement.
 - Compatibilité Windows/passlib: la création de session pseudo ne dépend plus de bcrypt (évite les erreurs `trapped error reading bcrypt version`).

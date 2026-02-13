@@ -47,14 +47,39 @@ async def pull_model(model: str) -> dict:
         return resp.json()
 
 
+async def _embed_via_legacy(client: httpx.AsyncClient, text: str) -> list[float]:
+    resp = await client.post(
+        f"{settings.ollama_url}/api/embeddings",
+        json={"model": settings.ollama_embedding_model, "prompt": text},
+    )
+    resp.raise_for_status()
+    return resp.json()["embedding"]
+
+
+async def _embed_via_current(client: httpx.AsyncClient, text: str) -> list[float]:
+    resp = await client.post(
+        f"{settings.ollama_url}/api/embed",
+        json={"model": settings.ollama_embedding_model, "input": text},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    embeds = data.get("embeddings") or []
+    if not embeds:
+        raise ValueError("Réponse /api/embed sans embeddings")
+    return embeds[0]
+
+
 async def embed_texts(texts: list[str]) -> list[list[float]]:
-    embeddings = []
+    embeddings: list[list[float]] = []
     async with httpx.AsyncClient(timeout=120) as client:
         for text in texts:
-            resp = await client.post(
-                f"{settings.ollama_url}/api/embeddings",
-                json={"model": settings.ollama_embedding_model, "prompt": text},
-            )
-            resp.raise_for_status()
-            embeddings.append(resp.json()["embedding"])
+            try:
+                emb = await _embed_via_legacy(client, text)
+            except httpx.HTTPStatusError as exc:
+                # Some Ollama versions expose /api/embed instead of /api/embeddings
+                if exc.response.status_code == 404:
+                    emb = await _embed_via_current(client, text)
+                else:
+                    raise
+            embeddings.append(emb)
     return embeddings

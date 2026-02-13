@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -25,7 +25,6 @@ async def upload_pdf(
     user: User = Depends(get_actor_user),
 ):
     if not file.filename.lower().endswith(".pdf"):
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Seuls les PDF sont autorisés")
     storage = Path(settings.storage_root) / "pdfs"
     storage.mkdir(parents=True, exist_ok=True)
@@ -45,13 +44,17 @@ async def upload_pdf(
     db.refresh(doc)
 
     async def _ingest(doc_id: int):
-        await ingest_document(doc_id, target, title)
         inner_db = SessionLocal()
         try:
             d = inner_db.query(PdfDocument).filter(PdfDocument.id == doc_id).first()
-            if d:
-                d.status = "ready"
-                inner_db.commit()
+            try:
+                await ingest_document(doc_id, target, title)
+                if d:
+                    d.status = "ready"
+            except Exception:
+                if d:
+                    d.status = "failed"
+            inner_db.commit()
         finally:
             inner_db.close()
 
