@@ -13,3 +13,4 @@ pypdf==5.0.1
 numpy==2.1.1
 orjson==3.10.7
 pytest==8.3.3
+email-validator==2.2.0
