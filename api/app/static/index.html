@@ -56,7 +56,10 @@
   <div class="grid">
     <div class="card">
       <h3>Conversations</h3>
-      <button onclick="createConversation()">Nouveau fil</button>
+      <div class="row">
+        <button onclick="createConversation()">Nouveau fil</button>
+        <input id="conversation-filter" placeholder="Filtrer les discussions" style="flex:1;min-width:160px" oninput="loadConversations()" />
+      </div>
       <div id="conversations"></div>
     </div>
 
@@ -298,6 +301,20 @@ async function deleteConversation(id){
   }
 }
 
+async function renameConversation(id, currentTitle){
+  const next = prompt('Nouveau titre du fil :', currentTitle || '');
+  if(next === null) return;
+  const title = next.trim();
+  if(!title) return;
+  try{
+    await api(`/chat/conversations/${id}`, {method:'PATCH', body: JSON.stringify({title})});
+    if(currentConversationId === id) document.getElementById('session-status').innerText = `✅ Fil renommé: ${title}`;
+    await loadConversations();
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+  }
+}
+
 function renderConversationItem(container, c, prepend=false){
   const id = Number(c?.id);
   if(!Number.isFinite(id)) return;
@@ -310,7 +327,13 @@ function renderConversationItem(container, c, prepend=false){
   openBtn.textContent = `${c.title || 'Sans titre'} (${c.mode || 'co_design'})`;
   openBtn.style.flex='1';
   openBtn.style.textAlign='left';
+  if(currentConversationId === id) openBtn.style.outline = '2px solid #84a9ff';
   openBtn.onclick = ()=> loadMessages(id);
+
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✏️';
+  renameBtn.title = 'Renommer le fil';
+  renameBtn.onclick = ()=> renameConversation(id, c.title || '');
 
   const delBtn = document.createElement('button');
   delBtn.textContent = '🗑';
@@ -319,6 +342,7 @@ function renderConversationItem(container, c, prepend=false){
   delBtn.onclick = ()=> deleteConversation(id);
 
   row.appendChild(openBtn);
+  row.appendChild(renameBtn);
   row.appendChild(delBtn);
   if(prepend) container.prepend(row); else container.appendChild(row);
 }
@@ -363,10 +387,12 @@ async function loadConversations(){
   const res = await api('/chat/conversations');
   const raw = await res.json();
   const items = Array.isArray(raw) ? raw : (raw?.items || []);
+  const q = (document.getElementById('conversation-filter')?.value || "").trim().toLowerCase();
+  const filtered = q ? items.filter(c => `${c.title || ""} ${c.mode || ""}`.toLowerCase().includes(q)) : items;
   const el = document.getElementById('conversations');
   el.innerHTML = '';
-  items.forEach(c=> renderConversationItem(el, c));
-  return items.filter(c=>Number.isFinite(Number(c?.id)));
+  filtered.forEach(c=> renderConversationItem(el, c));
+  return filtered.filter(c=>Number.isFinite(Number(c?.id)));
 }
 
 async function loadMessages(id){
@@ -443,6 +469,13 @@ async function sendMessage(){
   if (selectedModel && Array.from(document.getElementById('model').options).find(o => o.value === selectedModel)) {
     document.getElementById('model').value = selectedModel;
   }
+  const prompt = document.getElementById('prompt');
+  prompt.addEventListener('keydown', (e)=>{
+    if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){
+      e.preventDefault();
+      sendMessage();
+    }
+  });
   if (pseudo) {
     document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
     try { await Promise.all([loadConversations(), refreshPdfs()]); } catch {}

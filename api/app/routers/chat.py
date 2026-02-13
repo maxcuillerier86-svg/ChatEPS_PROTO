@@ -121,6 +121,31 @@ def list_messages(conversation_id: int, db: Session = Depends(get_db), user: Use
 
 
 
+
+
+@router.patch("/conversations/{conversation_id}")
+def rename_conversation(conversation_id: int, payload: dict, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Nouveau titre requis")
+
+    create_events = db.query(TraceEvent).filter(
+        TraceEvent.user_id == user.id,
+        TraceEvent.event_type == "conversation_create",
+    ).all()
+    created_ids = {int(e.payload.get("conversation_id")) for e in create_events if e.payload.get("conversation_id")}
+    if conversation_id not in created_ids:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    conv.title = title
+    db.commit()
+    db.refresh(conv)
+    log_event(db, user.id, "conversation_rename", {"conversation_id": conversation_id, "title": title, "pseudo": user.full_name})
+    return _conversation_out(conv)
 @router.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
     create_events = db.query(TraceEvent).filter(
