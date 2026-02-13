@@ -6,7 +6,7 @@
   <title>Co-PE Local UI</title>
   <style>
     body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;color:#16202a}
-    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .wrap{max-width:1220px;margin:0 auto;padding:16px}
     .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
     input,textarea,button,select{padding:8px;border:1px solid #ccd3dd;border-radius:8px}
     button{background:#2458d3;color:#fff;cursor:pointer}
@@ -15,13 +15,14 @@
     .assistant{background:#f3f7ff}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .muted{color:#667085;font-size:13px}
+    .pdf-list{max-height:170px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1 style="margin:0">Co-PE – Interface locale</h1>
-    <p>Utilisez un pseudo, choisissez/téléchargez un modèle Ollama et discutez.</p>
+    <p>Utilisez un pseudo, stockez des PDF localement et discutez avec l’IA + vos sources.</p>
   </div>
 
   <div class="card">
@@ -35,7 +36,21 @@
       <button onclick="startSession()">Démarrer</button>
       <span id="session-status"></span>
     </div>
-    <p class="muted">Presets inclus: gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. Le bouton Pull lance `ollama pull` via API locale. En local Windows, utilisez `OLLAMA_URL=http://localhost:11434`.</p>
+    <p class="muted">Presets: gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. En local Windows: `OLLAMA_URL=http://localhost:11434`.</p>
+  </div>
+
+  <div class="card">
+    <h3>Bibliothèque PDF locale (RAG)</h3>
+    <div class="row">
+      <input id="pdf-title" placeholder="Titre du PDF" style="min-width:220px" />
+      <input id="pdf-file" type="file" accept="application/pdf" />
+      <button onclick="uploadPdf()">Uploader PDF</button>
+      <button onclick="refreshPdfs()">Rafraîchir</button>
+      <label><input id="use-rag" type="checkbox" checked /> Utiliser RAG</label>
+      <span id="pdf-status"></span>
+    </div>
+    <div id="pdfs" class="pdf-list"></div>
+    <p class="muted">Sélectionnez un ou plusieurs PDF: seules ces sources seront utilisées dans la réponse IA.</p>
   </div>
 
   <div class="grid">
@@ -48,7 +63,7 @@
     <div class="card">
       <h3>Chat</h3>
       <div id="messages" style="min-height:280px;max-height:420px;overflow:auto"></div>
-      <textarea id="prompt" rows="4" style="width:100%">Aide-moi à créer un plan de séance volleyball.</textarea>
+      <textarea id="prompt" rows="4" style="width:100%">Aide-moi à créer un plan de séance volleyball à partir des PDF sélectionnés.</textarea>
       <div style="margin-top:8px">
         <button onclick="sendMessage()">Envoyer</button>
       </div>
@@ -60,6 +75,7 @@
 let pseudo = localStorage.getItem('pseudo') || '';
 let selectedModel = localStorage.getItem('model') || '';
 let currentConversationId = null;
+let selectedPdfIds = [];
 const PRESET_MODELS = ['gpt-oss:20b', 'llama3.1', 'llama3.2', 'mistral', 'qwen2.5'];
 
 async function readErrorMessage(res){
@@ -157,9 +173,67 @@ async function startSession(){
     localStorage.setItem('pseudo', pseudo);
     localStorage.setItem('model', selectedModel);
     document.getElementById('session-status').innerText = `✅ Session: ${pseudo} | modèle: ${selectedModel}`;
-    await loadConversations();
+    await Promise.all([loadConversations(), refreshPdfs()]);
   }catch(e){
     document.getElementById('session-status').innerText = '❌ ' + e.message;
+  }
+}
+
+async function uploadPdf(){
+  try{
+    const title = document.getElementById('pdf-title').value.trim();
+    const fileInput = document.getElementById('pdf-file');
+    const file = fileInput.files && fileInput.files[0];
+    if(!title) throw new Error('Titre PDF requis');
+    if(!file) throw new Error('Choisir un fichier PDF');
+    const form = new FormData();
+    form.set('title', title);
+    form.set('file', file);
+    document.getElementById('pdf-status').innerText = '⏳ Upload/ingestion...';
+    const res = await fetch('/library/upload', { method:'POST', headers:getHeaders(), body:form });
+    if(!res.ok) throw new Error(await readErrorMessage(res));
+    document.getElementById('pdf-status').innerText = '✅ PDF envoyé';
+    fileInput.value = '';
+    await refreshPdfs();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+function renderPdfs(items){
+  const box = document.getElementById('pdfs');
+  box.innerHTML = '';
+  if(!items.length){
+    box.innerHTML = '<span class="muted">Aucun PDF pour le moment.</span>';
+    return;
+  }
+  items.forEach(d=>{
+    const row = document.createElement('div');
+    row.style.marginBottom = '6px';
+    const checked = selectedPdfIds.includes(d.id) ? 'checked' : '';
+    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked}/> <b>${d.title}</b> — ${d.status}</label>`;
+    box.appendChild(row);
+  });
+  box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const id = Number(cb.getAttribute('data-id'));
+      if(cb.checked){
+        if(!selectedPdfIds.includes(id)) selectedPdfIds.push(id);
+      }else{
+        selectedPdfIds = selectedPdfIds.filter(x=>x!==id);
+      }
+    });
+  });
+}
+
+async function refreshPdfs(){
+  try{
+    const res = await api('/library/documents');
+    const docs = await res.json();
+    selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id));
+    renderPdfs(docs);
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
   }
 }
 
@@ -209,6 +283,7 @@ function appendMessage(role, content){
 async function sendMessage(){
   if(!currentConversationId) return alert('Créez ou sélectionnez une conversation');
   const content = document.getElementById('prompt').value;
+  const useRag = document.getElementById('use-rag').checked;
   selectedModel = document.getElementById('model').value;
   localStorage.setItem('model', selectedModel);
 
@@ -218,8 +293,12 @@ async function sendMessage(){
   const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
     method:'POST',
     headers:getHeaders({'Content-Type':'application/json'}),
-    body: JSON.stringify({content, use_rag:true, collection_ids:[], model:selectedModel})
+    body: JSON.stringify({content, use_rag:useRag, collection_ids:selectedPdfIds, model:selectedModel})
   });
+  if(!res.ok){
+    aiNode.innerHTML = `<b>assistant:</b> ❌ ${await readErrorMessage(res)}`;
+    return;
+  }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -247,7 +326,7 @@ async function sendMessage(){
   }
   if (pseudo) {
     document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
-    try { await loadConversations(); } catch {}
+    try { await Promise.all([loadConversations(), refreshPdfs()]); } catch {}
   }
 })();
 </script>

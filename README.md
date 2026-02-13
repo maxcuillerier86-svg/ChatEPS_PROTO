@@ -111,6 +111,7 @@ pytest
 
 
 ## 9) Session locale sans authentification
+- Bibliothèque PDF locale (UI): upload de PDF, stockage local, sélection des documents puis chat RAG ciblé sur ces PDF.
 - Pseudo (pas de mot de passe): l’UI envoie `X-Pseudo` et le backend crée/réutilise automatiquement le profil local associé.
 - Les conversations listées sont celles créées par le pseudo actif.
 - Sélection de modèle: endpoint `GET /chat/models` + sélection dans l’UI avant envoi.
