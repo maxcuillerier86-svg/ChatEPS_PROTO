@@ -69,17 +69,40 @@ async def _embed_via_current(client: httpx.AsyncClient, text: str) -> list[float
     return embeds[0]
 
 
+async def _attempt_pull_embedding_model(client: httpx.AsyncClient):
+    await client.post(
+        f"{settings.ollama_url}/api/pull",
+        json={"name": settings.ollama_embedding_model, "stream": False},
+        timeout=600,
+    )
+
+
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     embeddings: list[list[float]] = []
     async with httpx.AsyncClient(timeout=120) as client:
         for text in texts:
-            try:
-                emb = await _embed_via_legacy(client, text)
-            except httpx.HTTPStatusError as exc:
-                # Some Ollama versions expose /api/embed instead of /api/embeddings
-                if exc.response.status_code == 404:
-                    emb = await _embed_via_current(client, text)
-                else:
+            for attempt in range(2):
+                try:
+                    emb = await _embed_via_legacy(client, text)
+                    embeddings.append(emb)
+                    break
+                except httpx.HTTPStatusError as exc_legacy:
+                    # API shape changed on newer Ollama versions
+                    if exc_legacy.response.status_code == 404:
+                        try:
+                            emb = await _embed_via_current(client, text)
+                            embeddings.append(emb)
+                            break
+                        except httpx.HTTPStatusError as exc_current:
+                            body = (exc_current.response.text or "").lower()
+                            # missing embedding model: auto-pull then retry once
+                            if attempt == 0 and ("model" in body and "not" in body and "found" in body):
+                                await _attempt_pull_embedding_model(client)
+                                continue
+                            raise
+                    body = (exc_legacy.response.text or "").lower()
+                    if attempt == 0 and ("model" in body and "not" in body and "found" in body):
+                        await _attempt_pull_embedding_model(client)
+                        continue
                     raise
-            embeddings.append(emb)
     return embeddings

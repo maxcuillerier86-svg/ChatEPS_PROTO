@@ -213,7 +213,8 @@ function renderPdfs(items){
     const enabled = d.status === 'ready';
     const checked = enabled && selectedPdfIds.includes(d.id) ? 'checked' : '';
     const disabled = enabled ? '' : 'disabled';
-    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}</label>`;
+    const note = d.status === 'failed' ? ' (ingestion échouée)' : '';
+    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}${note}</label>`;
     box.appendChild(row);
   });
   box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
@@ -239,13 +240,28 @@ async function refreshPdfs(){
   }
 }
 
+function addConversationButton(c){
+  const el = document.getElementById('conversations');
+  const b = document.createElement('button');
+  b.textContent = `${c.title} (${c.mode})`;
+  b.style.display='block'; b.style.margin='8px 0';
+  b.onclick = ()=> loadMessages(c.id);
+  el.prepend(b);
+}
+
 async function createConversation(){
-  const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
-  const conv = await res.json();
-  if (!conv || typeof conv.id !== 'number') throw new Error('Conversation invalide retournée par l’API');
-  currentConversationId = conv.id;
-  await loadConversations();
-  await loadMessages(conv.id);
+  try{
+    const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
+    const conv = await res.json();
+    if (!conv || typeof conv.id !== 'number') throw new Error('Conversation invalide retournée par l’API');
+    currentConversationId = conv.id;
+    addConversationButton(conv);
+    await loadMessages(conv.id);
+    return conv;
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+    return null;
+  }
 }
 
 async function loadConversations(){
@@ -284,8 +300,8 @@ function appendMessage(role, content){
 
 async function sendMessage(){
   if(!currentConversationId){
-    await createConversation();
-    if(!currentConversationId) return;
+    const conv = await createConversation();
+    if(!conv || !currentConversationId) return;
   }
   const content = document.getElementById('prompt').value;
   const useRag = document.getElementById('use-rag').checked;
