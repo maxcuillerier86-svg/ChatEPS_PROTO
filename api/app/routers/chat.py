@@ -27,7 +27,7 @@ def _conversation_out(conv: Conversation) -> dict:
     return {
         "id": conv.id,
         "title": conv.title,
-        "mode": conv_mode,
+        "mode": conv.mode,
         "type": conv.type,
         "course_id": conv.course_id,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
@@ -69,7 +69,7 @@ def create_conversation(payload: ConversationCreate, db: Session = Depends(get_d
     db.add(conv)
     db.commit()
     db.refresh(conv)
-    log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv_mode, "pseudo": user.full_name})
+    log_event(db, user.id, "conversation_create", {"conversation_id": conv.id, "mode": conv.mode, "pseudo": user.full_name})
     return _conversation_out(conv)
 
 
@@ -162,7 +162,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                             "conversation_id": conv_id,
                             "has_citations": bool(citations),
                             "prompt_length": len(payload.content),
-                            "mode": conv_mode,
+                            "mode": conv.mode,
                             "model": payload.model,
                             "pseudo": user_name,
                         },
