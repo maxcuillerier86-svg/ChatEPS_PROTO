@@ -5,24 +5,39 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>chat-EPS</title>
   <style>
-    body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;color:#16202a}
+    :root{--uqam-blue:#0077c8;--uqam-blue-dark:#0068ae;--uqam-bg:#f2f8fd;--uqam-ink:#123047;--uqam-border:#bfdcf0}
+    body{font-family:Arial,sans-serif;background:var(--uqam-bg);margin:0;color:var(--uqam-ink)}
     .wrap{max-width:1220px;margin:0 auto;padding:16px}
-    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #e5edf4}
     input,textarea,button,select{padding:8px;border:1px solid #ccd3dd;border-radius:8px}
-    button{background:#2458d3;color:#fff;cursor:pointer}
+    input:focus,textarea:focus,select:focus{outline:2px solid #b6dfff;border-color:var(--uqam-blue)}
+    button{background:var(--uqam-blue);color:#fff;cursor:pointer;border-color:var(--uqam-blue-dark)}
+    button:hover{background:var(--uqam-blue-dark)}
     .grid{display:grid;grid-template-columns:1fr 2fr;gap:12px}
     .msg{padding:8px;border-bottom:1px solid #eef2f6}
-    .assistant{background:#f3f7ff}
+    .assistant{background:#edf6fd}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .muted{color:#667085;font-size:13px}
-    .pdf-list{max-height:170px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px}
+    .pdf-list{max-height:170px;overflow:auto;border:1px solid var(--uqam-border);border-radius:8px;padding:8px;background:#fbfdff}
+    .brand-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+    .brand-mark{font-size:12px;color:#5a7890;background:#f5faff;border:1px solid var(--uqam-border);padding:4px 8px;border-radius:999px}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <h1 style="margin:0">chat-EPS – Interface locale</h1>
-    <p>Utilisez un pseudo, stockez des PDF localement et discutez avec l’IA + vos sources.</p>
+    <div class="brand-head">
+      <div>
+        <h1 style="margin:0;color:var(--uqam-blue-dark)">chat-EPS – Interface locale</h1>
+        <p>Utilisez un pseudo, stockez des PDF localement et discutez avec l’IA + vos sources.</p>
+      </div>
+      <div style="text-align:right">
+        <svg width="210" height="70" viewBox="0 0 210 70" xmlns="http://www.w3.org/2000/svg" aria-label="UQAM logo">
+          <text x="0" y="52" font-size="56" font-family="Arial, Helvetica, sans-serif" font-weight="700" fill="#0077c8">UQÀM</text>
+        </svg>
+        <div class="brand-mark">Palette inspirée du logo UQÀM</div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -252,7 +267,7 @@ function renderPdfs(items){
     const note = d.status === 'failed' ? ' (ingestion échouée, fallback local activé)' : '';
     row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}${note}</label>
       <button data-rename-id="${d.id}" data-current-title="${String(d.title).replace(/"/g, '&quot;')}" style="margin-left:8px">Renommer</button>
-      <button data-delete-id="${d.id}" style="margin-left:6px;background:#b42318">Supprimer</button>`;
+      <button data-delete-id="${d.id}" style="margin-left:6px;background:#b42318;border-color:#941b12">Supprimer</button>`;
     box.appendChild(row);
   });
   box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
@@ -338,7 +353,7 @@ function renderConversationItem(container, c, prepend=false){
   const delBtn = document.createElement('button');
   delBtn.textContent = '🗑';
   delBtn.title = 'Supprimer le fil';
-  delBtn.style.background = '#b42318';
+  delBtn.style.background = '#b42318'; delBtn.style.borderColor='#941b12';
   delBtn.onclick = ()=> deleteConversation(id);
 
   row.appendChild(openBtn);
