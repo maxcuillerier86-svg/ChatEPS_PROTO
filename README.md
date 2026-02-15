@@ -137,3 +137,5 @@ pytest
 - Cache embeddings (TTL/LRU) pour réduire latence et appels Ollama redondants.
 
 Voir `docs/RAG_SYSTEM_UPGRADE.md` pour le pipeline détaillé et les templates de prompt.
+
+- Stratégie UX/agent (Phase 3/4): `docs/PHASE3_PHASE4_UX_STRATEGY.md`.
