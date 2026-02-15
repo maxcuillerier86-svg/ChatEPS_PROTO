@@ -1,6 +1,34 @@
+import time
+from collections import OrderedDict
+
 import httpx
 
 from app.core.config import settings
+
+_EMBED_CACHE_MAX = 1500
+_EMBED_CACHE_TTL_S = 60 * 30
+_embed_cache: OrderedDict[tuple[str, str], tuple[float, list[float]]] = OrderedDict()
+
+
+def _cache_get(model: str, text: str) -> list[float] | None:
+    key = (model, text)
+    found = _embed_cache.get(key)
+    if not found:
+        return None
+    ts, value = found
+    if time.time() - ts > _EMBED_CACHE_TTL_S:
+        _embed_cache.pop(key, None)
+        return None
+    _embed_cache.move_to_end(key)
+    return value
+
+
+def _cache_set(model: str, text: str, vector: list[float]):
+    key = (model, text)
+    _embed_cache[key] = (time.time(), vector)
+    _embed_cache.move_to_end(key)
+    while len(_embed_cache) > _EMBED_CACHE_MAX:
+        _embed_cache.popitem(last=False)
 
 
 async def check_ollama() -> tuple[bool, str | None]:
@@ -88,12 +116,18 @@ async def _attempt_pull_model(client: httpx.AsyncClient, model: str):
 
 
 async def _embed_one_text(client: httpx.AsyncClient, text: str, model: str) -> list[float]:
+    cached = _cache_get(model, text)
+    if cached is not None:
+        return cached
     try:
-        return await _embed_via_legacy(client, text, model)
+        vector = await _embed_via_legacy(client, text, model)
     except httpx.HTTPStatusError as exc_legacy:
         if exc_legacy.response.status_code == 404:
-            return await _embed_via_current(client, text, model)
-        raise
+            vector = await _embed_via_current(client, text, model)
+        else:
+            raise
+    _cache_set(model, text, vector)
+    return vector
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:

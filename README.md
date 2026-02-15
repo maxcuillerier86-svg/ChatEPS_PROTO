@@ -126,3 +126,14 @@ pytest
 - `WARNING: Invalid HTTP request received.` : souvent causé par un navigateur/extension qui tente HTTPS/WebSocket sur un port HTTP local. Ce warning n’empêche pas le fonctionnement normal de l’API/UI.
 - Si vous lancez uniquement `uvicorn app.main:app --reload --port 8000`, l’UI intégrée est disponible sur `http://127.0.0.1:8000`.
 - L’ancienne UI Next.js reste disponible sur `http://localhost:3000` si vous lancez aussi le frontend.
+
+
+## 11) Améliorations RAG (qualité + sécurité + perf)
+- Traitement de requête: classification d’intention, expansion sémantique, injection de contexte étudiant (niveau + confiance).
+- Retrieval multi-étapes: coarse lexical -> dense vectoriel -> re-ranking, avec filtres de métadonnées (`doc_types`, `tags`).
+- Segmentation documentaire: `theory`, `practice`, `reflection`, `artifacts` + stratégie de chunking adaptée.
+- Compression de contexte avant génération pour limiter le bruit et préserver les citations utiles.
+- Mode `strict_grounding`: si preuves insuffisantes, réponse explicite plutôt qu’hallucination.
+- Cache embeddings (TTL/LRU) pour réduire latence et appels Ollama redondants.
+
+Voir `docs/RAG_SYSTEM_UPGRADE.md` pour le pipeline détaillé et les templates de prompt.

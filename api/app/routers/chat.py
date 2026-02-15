@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,7 +10,8 @@ from app.core.deps import get_actor_user
 from app.models.entities import Conversation, Message, TraceEvent, User
 from app.schemas.chat import ConversationCreate, MessageIn
 from app.services.ollama import chat_stream, check_ollama, list_models, pull_model
-from app.services.rag import retrieve
+from app.services.query_processing import build_student_context, classify_intent, expand_query_semantically
+from app.services.rag import compress_context, retrieve
 from app.services.tracing import log_event
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -21,6 +23,12 @@ MODE_SYSTEM = {
     "justification": "Tu demandes les rationnels, alternatives et conditions d'application.",
     "evaluation_reflexive": "Tu mènes une évaluation réflexive. Termine chaque réponse par une auto-évaluation (1-5 + pourquoi).",
 }
+
+GROUNDING_RULES = (
+    "Mode ancrage strict: n'affirme rien qui ne soit pas supporté par les extraits fournis. "
+    "Si la preuve est insuffisante, dis explicitement 'Sources insuffisantes'. "
+    "Cite chaque affirmation clé au format [doc:ID p.PAGE]."
+)
 
 
 def _conversation_out(conv: Conversation) -> dict:
@@ -46,6 +54,11 @@ def _message_out(msg: Message) -> dict:
     }
 
 
+def _owned_conversation_ids(db: Session, user_id: int) -> set[int]:
+    create_events = db.query(TraceEvent).filter(TraceEvent.user_id == user_id, TraceEvent.event_type == "conversation_create").all()
+    return {int(e.payload.get("conversation_id")) for e in create_events if e.payload.get("conversation_id")}
+
+
 def _diversify_hits(hits: list[dict], selected_doc_ids: list[int] | None, max_items: int) -> list[dict]:
     if not hits:
         return []
@@ -58,12 +71,11 @@ def _diversify_hits(hits: list[dict], selected_doc_ids: list[int] | None, max_it
         by_doc.setdefault(did, []).append(h)
 
     out: list[dict] = []
-    # one snippet per selected doc first
     for did in selected_doc_ids:
         snippets = by_doc.get(int(did)) or []
         if snippets:
             out.append(snippets.pop(0))
-    # then fill with remaining best hits
+
     if len(out) < max_items:
         for h in hits:
             if h not in out:
@@ -102,11 +114,7 @@ def create_conversation(payload: ConversationCreate, db: Session = Depends(get_d
 
 @router.get("/conversations")
 def list_conversations(db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
-    created_ids = [
-        int(e.payload.get("conversation_id"))
-        for e in db.query(TraceEvent).filter(TraceEvent.user_id == user.id, TraceEvent.event_type == "conversation_create").all()
-        if e.payload.get("conversation_id")
-    ]
+    created_ids = list(_owned_conversation_ids(db, user.id))
     if not created_ids:
         return []
     conversations = db.query(Conversation).filter(Conversation.id.in_(created_ids)).order_by(Conversation.updated_at.desc()).all()
@@ -115,12 +123,10 @@ def list_conversations(db: Session = Depends(get_db), user: User = Depends(get_a
 
 @router.get("/conversations/{conversation_id}/messages")
 def list_messages(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
+    if conversation_id not in _owned_conversation_ids(db, user.id):
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
     messages = db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at.asc()).all()
     return [_message_out(m) for m in messages]
-
-
-
-
 
 
 @router.patch("/conversations/{conversation_id}")
@@ -129,11 +135,7 @@ def rename_conversation(conversation_id: int, payload: dict, db: Session = Depen
     if not title:
         raise HTTPException(status_code=400, detail="Nouveau titre requis")
 
-    create_events = db.query(TraceEvent).filter(
-        TraceEvent.user_id == user.id,
-        TraceEvent.event_type == "conversation_create",
-    ).all()
-    created_ids = {int(e.payload.get("conversation_id")) for e in create_events if e.payload.get("conversation_id")}
+    created_ids = _owned_conversation_ids(db, user.id)
     if conversation_id not in created_ids:
         raise HTTPException(status_code=404, detail="Conversation introuvable")
 
@@ -146,13 +148,11 @@ def rename_conversation(conversation_id: int, payload: dict, db: Session = Depen
     db.refresh(conv)
     log_event(db, user.id, "conversation_rename", {"conversation_id": conversation_id, "title": title, "pseudo": user.full_name})
     return _conversation_out(conv)
+
+
 @router.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
-    create_events = db.query(TraceEvent).filter(
-        TraceEvent.user_id == user.id,
-        TraceEvent.event_type == "conversation_create",
-    ).all()
-    created_ids = {int(e.payload.get("conversation_id")) for e in create_events if e.payload.get("conversation_id")}
+    created_ids = _owned_conversation_ids(db, user.id)
     if conversation_id not in created_ids:
         raise HTTPException(status_code=404, detail="Conversation introuvable")
 
@@ -167,8 +167,13 @@ def delete_conversation(conversation_id: int, db: Session = Depends(get_db), use
 
     log_event(db, user.id, "conversation_delete", {"conversation_id": conversation_id, "pseudo": user.full_name})
     return {"ok": True}
+
+
 @router.post("/conversations/{conversation_id}/stream")
 async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = Depends(get_db), user: User = Depends(get_actor_user)):
+    if conversation_id not in _owned_conversation_ids(db, user.id):
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(404, "Conversation introuvable")
@@ -189,26 +194,71 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
     db.add(user_msg)
     db.commit()
 
-    citations = []
+    intent = classify_intent(payload.content, conv_mode)
+    expanded_queries = expand_query_semantically(payload.content, intent)
+    student_context = build_student_context(payload.student_level, payload.confidence, pseudo=user_name)
+
+    citations: list[dict] = []
     context = ""
-    if payload.use_rag:
+    retrieval_ms = 0.0
+
+    if payload.use_rag and (payload.collection_ids or payload.metadata_filters):
+        t0 = perf_counter()
         try:
-            target_k = max(6, len(payload.collection_ids or []) * 2)
-            hits = await retrieve(payload.content, payload.collection_ids, top_k=target_k)
+            target_k = max(8, len(payload.collection_ids or []) * 3)
+            hits = await retrieve(
+                payload.content,
+                payload.collection_ids,
+                top_k=target_k,
+                expanded_queries=expanded_queries,
+                intent=intent,
+                metadata_filters=payload.metadata_filters,
+            )
             hits = _diversify_hits(hits, payload.collection_ids, max_items=target_k)
+            compressed = compress_context(hits, max_chars=1600)
             citations = [
-                {"doc_id": h["doc_id"], "title": h["title"], "page": h["page"], "excerpt": h["text"][:280]}
-                for h in hits
+                {
+                    "doc_id": h.get("doc_id"),
+                    "title": h.get("title"),
+                    "page": h.get("page"),
+                    "doc_type": h.get("doc_type"),
+                    "excerpt": (h.get("excerpt") or h.get("text") or "")[:280],
+                }
+                for h in compressed
             ]
-            context = "\n\nSources PDF:\n" + "\n".join([f"- {c['title']} p.{c['page']}: {c['excerpt']}" for c in citations])
+            if citations:
+                context = "\n\nSources PDF (compressées):\n" + "\n".join(
+                    [
+                        f"- [doc:{c['doc_id']} p.{c['page']}] ({c.get('doc_type','theory')}) {c['title']}: {c['excerpt']}"
+                        for c in citations
+                    ]
+                )
+            elif payload.strict_grounding:
+                context = "\n\nSources insuffisantes pour ancrage strict."
         except Exception:
             context = "\n\nNote: RAG indisponible (index/embeddings). Réponse sans sources PDF pour ce tour."
+        retrieval_ms = (perf_counter() - t0) * 1000
 
     history = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.created_at.asc()).all()
-    model_messages = [{"role": "system", "content": MODE_SYSTEM.get(conv_mode, MODE_SYSTEM["exploration_novice"])}]
+    system_prompt = MODE_SYSTEM.get(conv_mode, MODE_SYSTEM["exploration_novice"])
+    if payload.strict_grounding:
+        system_prompt = f"{system_prompt}\n{GROUNDING_RULES}"
+
+    model_messages = [{"role": "system", "content": system_prompt}]
     for m in history[-12:]:
         model_messages.append({"role": m.role, "content": m.content})
-    model_messages[-1]["content"] = payload.content + context + "\nSi plusieurs sources PDF sont sélectionnées, compare-les explicitement. Si aucune source fournie, indique-le explicitement. Termine par auto-évaluation 1-5."
+
+    final_user_prompt = payload.content
+    final_user_prompt += f"\n\nContexte étudiant: {student_context}"
+    final_user_prompt += f"\nIntent détecté: {intent}."
+    if expanded_queries:
+        final_user_prompt += f"\nRequêtes d'expansion: {', '.join(expanded_queries)}"
+    final_user_prompt += context
+    final_user_prompt += "\nRespecte strictement les citations quand des sources sont fournies."
+    if payload.strict_grounding:
+        final_user_prompt += " Si les preuves manquent, réponds uniquement 'Sources insuffisantes'."
+    final_user_prompt += " Termine par auto-évaluation 1-5."
+    model_messages[-1]["content"] = final_user_prompt
 
     async def event_stream():
         collected = ""
@@ -223,12 +273,22 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     collected += token
                     yield f"data: {json.dumps({'token': token})}\n\n"
                 if obj.get("done"):
+                    output_text = collected
+                    if payload.strict_grounding and payload.use_rag and not citations:
+                        output_text = "Sources insuffisantes pour répondre de manière ancrée sur les PDF sélectionnés."
                     with SessionLocal() as writer_db:
                         ai_msg = Message(
                             conversation_id=conv_id,
                             role="assistant",
-                            content=collected,
-                            metadata_json={"citations": citations, "model": payload.model},
+                            content=output_text,
+                            metadata_json={
+                                "citations": citations,
+                                "model": payload.model,
+                                "intent": intent,
+                                "expanded_queries": expanded_queries,
+                                "strict_grounding": payload.strict_grounding,
+                                "retrieval_ms": round(retrieval_ms, 2),
+                            },
                         )
                         writer_db.add(ai_msg)
                         writer_db.commit()
@@ -243,6 +303,8 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                                 "mode": conv_mode,
                                 "model": payload.model,
                                 "pseudo": user_name,
+                                "intent": intent,
+                                "retrieval_ms": round(retrieval_ms, 2),
                             },
                             conversation_id=conv_id,
                         )

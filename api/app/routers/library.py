@@ -52,7 +52,12 @@ async def upload_pdf(
         try:
             d = inner_db.query(PdfDocument).filter(PdfDocument.id == doc_id).first()
             try:
-                await ingest_document(doc_id, target, title)
+                await ingest_document(
+                    doc_id,
+                    target,
+                    title,
+                    metadata={"tags": d.tags if d else [], "course_id": d.course_id if d else None},
+                )
                 if d:
                     d.status = "ready"
             except Exception:

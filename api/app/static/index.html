@@ -66,6 +66,26 @@
     </div>
     <div id="pdfs" class="pdf-list"></div>
     <p class="muted">Sélectionnez un ou plusieurs PDF: seules ces sources seront utilisées dans la réponse IA. <span id="pdf-selected-info"></span></p>
+    <div class="row" style="margin-top:8px">
+      <label>Niveau étudiant
+        <select id="student-level">
+          <option value="novice">novice</option>
+          <option value="intermédiaire">intermédiaire</option>
+          <option value="expert">expert</option>
+        </select>
+      </label>
+      <label>Confiance (1-5) <input id="confidence" type="number" min="1" max="5" value="3" style="width:70px" /></label>
+      <label><input id="strict-grounding" type="checkbox" checked /> Grounding strict</label>
+      <label>Type doc
+        <select id="doc-type-filter">
+          <option value="">Tous</option>
+          <option value="theory">theory</option>
+          <option value="practice">practice</option>
+          <option value="reflection">reflection</option>
+          <option value="artifacts">artifacts</option>
+        </select>
+      </label>
+    </div>
   </div>
 
   <div class="grid">
@@ -447,10 +467,22 @@ async function sendMessage(){
   appendMessage('user', content);
   const aiNode = appendMessage('assistant', '');
 
+  const selectedDocType = document.getElementById('doc-type-filter').value;
+  const payload = {
+    content,
+    use_rag: useRag,
+    collection_ids: uniqueIds,
+    model: selectedModel,
+    student_level: document.getElementById('student-level').value,
+    confidence: Number(document.getElementById('confidence').value || 3),
+    strict_grounding: document.getElementById('strict-grounding').checked,
+    metadata_filters: selectedDocType ? {doc_types:[selectedDocType]} : null,
+  };
+
   const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
     method:'POST',
     headers:getHeaders({'Content-Type':'application/json'}),
-    body: JSON.stringify({content, use_rag:useRag, collection_ids:uniqueIds, model:selectedModel})
+    body: JSON.stringify(payload)
   });
   if(!res.ok){
     aiNode.innerHTML = `<b>assistant:</b> ❌ ${await readErrorMessage(res)}`;
