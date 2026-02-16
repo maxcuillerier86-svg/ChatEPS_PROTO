@@ -93,6 +93,22 @@ def _diversify_hits(hits: list[dict], selected_doc_ids: list[int] | None, max_it
     return out[:max_items]
 
 
+def _obsidian_config_from_payload(payload_cfg: dict | None) -> ObsidianConfig:
+    cfg = payload_cfg or {}
+    return ObsidianConfig(
+        mode=cfg.get("mode") or settings.obsidian_mode,
+        vault_path=cfg.get("vault_path") or settings.obsidian_vault_path,
+        rest_api_base_url=cfg.get("rest_api_base_url") or settings.obsidian_rest_api_base_url,
+        api_key=cfg.get("api_key") or settings.obsidian_api_key,
+        included_folders=[x.strip() for x in (cfg.get("included_folders") or settings.obsidian_included_folders.split(",")) if x and str(x).strip()],
+        excluded_folders=[x.strip() for x in (cfg.get("excluded_folders") or settings.obsidian_excluded_folders.split(",")) if x and str(x).strip()],
+        excluded_patterns=[x.strip() for x in (cfg.get("excluded_patterns") or settings.obsidian_excluded_patterns.split(",")) if x and str(x).strip()],
+        max_notes_to_index=int(cfg.get("max_notes_to_index") or settings.obsidian_max_notes_to_index),
+        max_note_bytes=int(cfg.get("max_note_bytes") or settings.obsidian_max_note_bytes),
+        incremental_indexing=bool(cfg.get("incremental_indexing", settings.obsidian_incremental_indexing)),
+    )
+
+
 @router.get("/models")
 async def models():
     return {"models": await list_models()}
@@ -319,18 +335,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
 
                     tool_results = []
                     try:
-                        obs_cfg = ObsidianConfig(
-                            mode=settings.obsidian_mode,
-                            vault_path=settings.obsidian_vault_path,
-                            rest_api_base_url=settings.obsidian_rest_api_base_url,
-                            api_key=settings.obsidian_api_key,
-                            included_folders=[x.strip() for x in settings.obsidian_included_folders.split(",") if x.strip()],
-                            excluded_folders=[x.strip() for x in settings.obsidian_excluded_folders.split(",") if x.strip()],
-                            excluded_patterns=[x.strip() for x in settings.obsidian_excluded_patterns.split(",") if x.strip()],
-                            max_notes_to_index=settings.obsidian_max_notes_to_index,
-                            max_note_bytes=settings.obsidian_max_note_bytes,
-                            incremental_indexing=settings.obsidian_incremental_indexing,
-                        )
+                        obs_cfg = _obsidian_config_from_payload(payload.obsidian_config)
                         obs_client = ObsidianClient(obs_cfg)
                         for call in extract_tool_calls(output_text):
                             tool_results.append(await execute_obsidian_tool(obs_client, call))
@@ -347,18 +352,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     obsidian_save = None
                     if should_autosave:
                         try:
-                            obs_cfg = ObsidianConfig(
-                            mode=settings.obsidian_mode,
-                            vault_path=settings.obsidian_vault_path,
-                            rest_api_base_url=settings.obsidian_rest_api_base_url,
-                            api_key=settings.obsidian_api_key,
-                            included_folders=[x.strip() for x in settings.obsidian_included_folders.split(",") if x.strip()],
-                            excluded_folders=[x.strip() for x in settings.obsidian_excluded_folders.split(",") if x.strip()],
-                            excluded_patterns=[x.strip() for x in settings.obsidian_excluded_patterns.split(",") if x.strip()],
-                            max_notes_to_index=settings.obsidian_max_notes_to_index,
-                            max_note_bytes=settings.obsidian_max_note_bytes,
-                            incremental_indexing=settings.obsidian_incremental_indexing,
-                        )
+                            obs_cfg = _obsidian_config_from_payload(payload.obsidian_config)
                             obs_client = ObsidianClient(obs_cfg)
                             save_payload = {
                                 "session_id": f"conv-{conv_id}",

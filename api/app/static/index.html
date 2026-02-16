@@ -506,6 +506,16 @@ function parseCsv(input){
   return (input||'').split(',').map(x=>x.trim()).filter(Boolean);
 }
 
+function getObsidianConfigPayload(){
+  return {
+    mode: document.getElementById('obsidian-mode').value,
+    vault_path: document.getElementById('obsidian-vault-path').value.trim() || null,
+    rest_api_base_url: document.getElementById('obsidian-rest-url').value.trim() || null,
+    api_key: document.getElementById('obsidian-api-key').value.trim() || null,
+    incremental_indexing: true,
+  };
+}
+
 async function loadObsidianStatus(){
   try{
     const res = await api('/obsidian/status');
@@ -514,7 +524,12 @@ async function loadObsidianStatus(){
     document.getElementById('obsidian-vault-path').value = data.config.vault_path || '';
     document.getElementById('obsidian-rest-url').value = data.config.rest_api_base_url || '';
     const st = data.index_status || {};
-    const conn = data.connection || {}; const restOk = conn.rest?.ok ? 'REST OK' : 'REST KO'; const fsOk = conn.filesystem?.ok ? 'FS OK' : 'FS KO'; document.getElementById('obsidian-status').innerText = `✅ ${restOk} / ${fsOk} | last:${st.last_run||'n/a'} indexed:${st.indexed||0} skipped:${st.skipped||0} errors:${st.errors||0}`;
+    const conn = data.connection || {};
+    const restOk = conn.rest?.ok ? 'REST OK' : 'REST KO';
+    const fsOk = conn.filesystem?.ok ? 'FS OK' : 'FS KO';
+    const active = conn.active || 'none';
+    const activePath = data.config.vault_path ? ` | vault:${data.config.vault_path}` : '';
+    document.getElementById('obsidian-status').innerText = `✅ ${restOk} / ${fsOk} | active:${active}${activePath} | last:${st.last_run||'n/a'} indexed:${st.indexed||0} skipped:${st.skipped||0} errors:${st.errors||0}`;
   }catch(e){
     document.getElementById('obsidian-status').innerText = `❌ ${e.message}`;
   }
@@ -522,13 +537,10 @@ async function loadObsidianStatus(){
 
 async function runObsidianIndex(){
   try{
-    const payload = {
-      mode: document.getElementById('obsidian-mode').value,
-      vault_path: document.getElementById('obsidian-vault-path').value.trim() || null,
-      rest_api_base_url: document.getElementById('obsidian-rest-url').value.trim() || null,
-      api_key: document.getElementById('obsidian-api-key').value.trim() || null,
-      incremental_indexing: true,
-    };
+    const payload = getObsidianConfigPayload();
+    if(payload.mode === 'filesystem' && !payload.vault_path){
+      throw new Error('vault_path manquant (mode filesystem).');
+    }
     document.getElementById('obsidian-status').innerText = '⏳ Indexation...';
     const res = await api('/obsidian/index', {method:'POST', body: JSON.stringify(payload)});
     const data = await res.json();
@@ -578,6 +590,7 @@ async function sendMessage(){
     autosave_to_obsidian: document.getElementById('autosave-obsidian').checked,
     obsidian_save_mode: document.getElementById('obsidian-save-mode').value,
     obsidian_target_folder: document.getElementById('obsidian-target-folder').value.trim() || null,
+    obsidian_config: getObsidianConfigPayload(),
     mark_canonical: document.getElementById('mark-canonical').checked,
     include_sources_in_save: document.getElementById('save-include-sources').checked,
     include_trace_in_save: document.getElementById('save-include-trace').checked,
@@ -641,6 +654,7 @@ async function sendMessage(){
               short_id: String(Date.now()).slice(-6),
               topic: document.getElementById('conversation-filter').value || 'chat-eps',
               session_id: pseudo || 'session',
+              obsidian_config: getObsidianConfigPayload(),
             };
             const rs = await api('/obsidian/save', {method:'POST', body: JSON.stringify(payloadSave)});
             const saved = await rs.json();

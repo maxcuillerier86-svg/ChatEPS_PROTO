@@ -17,6 +17,31 @@ def _split_csv(value: str) -> list[str]:
     return [x.strip() for x in (value or "").split(",") if x.strip()]
 
 
+def _normalize_target_folder(raw_folder: str | None, session_id: str, vault_path: str | None) -> str:
+    default_folder = f"ChatEPS/{session_id}"
+    folder = (raw_folder or "").strip()
+    if not folder:
+        return default_folder
+
+    folder_posix = folder.replace("\\", "/").strip("/")
+    abs_path = Path(folder).expanduser()
+    vault = Path(vault_path).expanduser().resolve() if vault_path else None
+
+    if abs_path.is_absolute() and vault:
+        resolved = abs_path.resolve()
+        if resolved == vault:
+            return default_folder
+        if vault in resolved.parents:
+            rel = resolved.relative_to(vault)
+            return str(rel).replace("\\", "/")
+        raise ValueError("target_folder doit être dans le vault Obsidian ou être un chemin relatif")
+
+    if folder_posix.startswith(".obsidian/") or folder_posix == ".obsidian":
+        raise ValueError("target_folder interdit (.obsidian)")
+
+    return folder_posix
+
+
 def build_obsidian_config(payload: dict | None = None) -> ObsidianConfig:
     payload = payload or {}
     mode = payload.get("mode") or settings.obsidian_mode
@@ -64,8 +89,15 @@ async def obsidian_status(user: User = Depends(get_actor_user)):
 @router.post("/index")
 async def obsidian_index(payload: dict | None = None, user: User = Depends(get_actor_user)):
     cfg = build_obsidian_config(payload)
-    if cfg.mode == "filesystem" and (not cfg.vault_path or not Path(cfg.vault_path).exists()):
-        raise HTTPException(status_code=400, detail="vault_path invalide ou inaccessible")
+    if cfg.mode == "filesystem":
+        if not cfg.vault_path:
+            raise HTTPException(
+                status_code=400,
+                detail="vault_path manquant (mode filesystem). Renseignez le chemin du vault Obsidian.",
+            )
+        vp = Path(cfg.vault_path).expanduser()
+        if not vp.exists() or not vp.is_dir():
+            raise HTTPException(status_code=400, detail=f"vault_path invalide ou inaccessible: {vp}")
     stats = await incremental_obsidian_index(cfg)
     return {"ok": True, "stats": stats.__dict__, "status": get_status()}
 
@@ -82,7 +114,10 @@ async def obsidian_save(payload: dict, user: User = Depends(get_actor_user)):
     short_id = str(payload.get("short_id") or "msg")[:8]
     topic = str(payload.get("topic") or "knowledge")
     mode = str(payload.get("save_mode") or "manual-only")
-    folder = str(payload.get("target_folder") or f"ChatEPS/{session_id}").strip().strip("/")
+    try:
+        folder = _normalize_target_folder(payload.get("target_folder"), session_id, cfg.vault_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     note_name = client.default_note_name(topic, short_id)
     note_path = f"{folder}/{note_name}" if mode != "daily-note-append" else f"{folder}/{__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d')}.md"
@@ -104,6 +139,13 @@ async def obsidian_save(payload: dict, user: User = Depends(get_actor_user)):
         include_retrieved_summary=bool(payload.get("include_retrieved_summary", False)),
     )
 
+    status = await client.status()
+    if status.get("active") == "none":
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun connecteur Obsidian actif. Vérifiez vault_path (filesystem) ou REST API (URL/API key).",
+        )
+
     try:
         if mode == "daily-note-append":
             result = await client.append_note(note_path, md)
@@ -113,5 +155,7 @@ async def obsidian_save(payload: dict, user: User = Depends(get_actor_user)):
                 # append fallback if already exists/conflict
                 result = await client.append_note(note_path, md)
         return {"ok": True, "saved": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Sauvegarde Obsidian refusée: {exc}")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Sauvegarde Obsidian échouée: {exc}")

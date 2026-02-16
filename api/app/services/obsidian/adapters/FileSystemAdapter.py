@@ -14,7 +14,7 @@ class FileSystemAdapter:
         max_notes_to_index: int = 5000,
         max_note_bytes: int = 500_000,
     ):
-        self.root = Path(vault_path).expanduser().resolve() if vault_path else Path(".").resolve()
+        self.root = Path(vault_path).expanduser().resolve() if vault_path else None
         self.included = included_folders or []
         self.excluded = excluded_folders or [".obsidian", "templates", "attachments"]
         self.patterns = excluded_patterns or [".obsidian/**", "templates/**", "attachments/**"]
@@ -22,10 +22,10 @@ class FileSystemAdapter:
         self.max_bytes = max_note_bytes
 
     def is_ready(self) -> bool:
-        return self.root.exists() and self.root.is_dir()
+        return bool(self.root and self.root.exists() and self.root.is_dir())
 
     def health(self) -> dict:
-        return {"ok": self.is_ready(), "mode": "filesystem", "vault_path": str(self.root)}
+        return {"ok": self.is_ready(), "mode": "filesystem", "vault_path": str(self.root) if self.root else None}
 
     @staticmethod
     def sanitize_filename(name: str) -> str:
@@ -34,6 +34,8 @@ class FileSystemAdapter:
         return (x or "note")[:120]
 
     def _assert_inside(self, path: Path):
+        if not self.root:
+            raise ValueError("Vault path non configuré")
         rp = path.resolve()
         if self.root not in rp.parents and rp != self.root:
             raise ValueError("Path traversal bloqué")
@@ -44,13 +46,37 @@ class FileSystemAdapter:
             raise ValueError("Chemin exclu")
 
     def _resolve_note_path(self, note_path: str) -> Path:
-        cleaned = note_path.replace("\\", "/").lstrip("/")
-        p = (self.root / cleaned).with_suffix(".md") if not cleaned.endswith(".md") else (self.root / cleaned)
+        if not self.root:
+            raise ValueError("Vault path non configuré")
+        raw = (note_path or "").strip()
+        if not raw:
+            raise ValueError("Chemin de note vide")
+
+        # Handle cross-platform absolute path strings (Windows/Unix).
+        # On Linux, Path("C:/...") is not absolute, so we detect it manually.
+        looks_windows_abs = bool(re.match(r"^[A-Za-z]:[\\/]", raw) or raw.startswith("\\\\"))
+        normalized_raw = raw.replace("\\", "/")
+        normalized_root = str(self.root).replace("\\", "/")
+
+        if looks_windows_abs and normalized_raw.lower().startswith(normalized_root.lower() + "/"):
+            normalized_raw = normalized_raw[len(normalized_root) + 1 :]
+            p = self.root / normalized_raw.lstrip("/")
+        elif looks_windows_abs:
+            p = Path(raw)
+        else:
+            abs_candidate = Path(normalized_raw)
+            if abs_candidate.is_absolute():
+                p = abs_candidate
+            else:
+                p = self.root / normalized_raw.lstrip("/")
+
+        if p.suffix.lower() != ".md":
+            p = p.with_suffix(".md")
         self._assert_inside(p)
         return p
 
     def list_notes(self) -> list[Path]:
-        if not self.is_ready():
+        if not self.is_ready() or not self.root:
             return []
         out: list[Path] = []
         for p in self.root.rglob("*.md"):
@@ -115,5 +141,5 @@ class FileSystemAdapter:
 
     def open_uri(self, note_path: str) -> str:
         safe = quote(note_path.replace("\\", "/"))
-        vault = quote(self.root.name)
+        vault = quote(self.root.name if self.root else "")
         return f"obsidian://open?vault={vault}&file={safe}"
