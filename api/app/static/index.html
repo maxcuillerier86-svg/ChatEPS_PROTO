@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>chat-EPS</title>
+  <style>
+    :root{--uqam-blue:#0077c8;--uqam-blue-dark:#0068ae;--uqam-bg:#f2f8fd;--uqam-ink:#123047;--uqam-border:#bfdcf0}
+    body{font-family:Arial,sans-serif;background:var(--uqam-bg);margin:0;color:var(--uqam-ink)}
+    .wrap{max-width:1220px;margin:0 auto;padding:16px}
+    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #e5edf4}
+    input,textarea,button,select{padding:8px;border:1px solid #ccd3dd;border-radius:8px}
+    input:focus,textarea:focus,select:focus{outline:2px solid #b6dfff;border-color:var(--uqam-blue)}
+    button{background:var(--uqam-blue);color:#fff;cursor:pointer;border-color:var(--uqam-blue-dark)}
+    button:hover{background:var(--uqam-blue-dark)}
+    .grid{display:grid;grid-template-columns:1fr 2fr;gap:12px}
+    .msg{padding:8px;border-bottom:1px solid #eef2f6}
+    .assistant{background:#edf6fd}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{color:#667085;font-size:13px}
+    .pdf-list{max-height:170px;overflow:auto;border:1px solid var(--uqam-border);border-radius:8px;padding:8px;background:#fbfdff}
+    .brand-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+    .brand-mark{font-size:12px;color:#5a7890;background:#f5faff;border:1px solid var(--uqam-border);padding:4px 8px;border-radius:999px}
+    .src-drawer{margin-top:6px;background:#fff;border:1px dashed #9bb8d1;border-radius:8px;padding:8px}
+    .src-pill{display:inline-block;font-size:11px;padding:2px 6px;border-radius:999px;background:#eef6ff;margin-right:6px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand-head">
+      <div>
+        <h1 style="margin:0;color:var(--uqam-blue-dark)">chat-EPS – Interface locale</h1>
+        <p>Utilisez un pseudo, stockez des PDF localement et discutez avec l’IA + vos sources.</p>
+      </div>
+      <div style="text-align:right">
+        <svg width="210" height="70" viewBox="0 0 210 70" xmlns="http://www.w3.org/2000/svg" aria-label="UQAM logo">
+          <text x="0" y="52" font-size="56" font-family="Arial, Helvetica, sans-serif" font-weight="700" fill="#0077c8">UQÀM</text>
+        </svg>
+        <div class="brand-mark">Palette inspirée du logo UQÀM</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Session</h3>
+    <div class="row">
+      <input id="pseudo" placeholder="Votre pseudo" value="Max" />
+      <select id="model"></select>
+      <input id="other-model" placeholder="OTHER: ex. gpt-oss:20b" style="min-width:220px" />
+      <button onclick="setOtherModel()">Utiliser OTHER</button>
+      <button onclick="pullCurrentModel()">Pull modèle</button>
+      <button onclick="startSession()">Démarrer</button>
+      <span id="session-status"></span>
+    </div>
+    <p class="muted">Presets: gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. En local Windows: `OLLAMA_URL=http://localhost:11434`.</p>
+  </div>
+
+
+  <div class="card">
+    <h3>Obsidian Vault (Markdown)</h3>
+    <div class="row">
+      <select id="obsidian-mode">
+        <option value="filesystem">filesystem</option>
+        <option value="rest">rest-api</option>
+      </select>
+      <input id="obsidian-vault-path" placeholder="Chemin vault (filesystem)" style="min-width:280px" />
+      <input id="obsidian-rest-url" placeholder="REST URL (ex: http://127.0.0.1:27124)" style="min-width:260px" />
+      <input id="obsidian-api-key" placeholder="API key REST" style="min-width:180px" />
+      <button onclick="runObsidianIndex()">Indexer Obsidian</button>
+      <button onclick="loadObsidianStatus()">Statut</button>
+      <span id="obsidian-status"></span>
+    </div>
+    <div class="row">
+      <label><input id="use-obsidian" type="checkbox" checked /> Utiliser Obsidian</label>
+      <label><input id="prefer-obsidian" type="checkbox" /> Préférer Obsidian</label>
+      <input id="obsidian-tags" placeholder="#tags (csv)" style="min-width:180px" />
+      <select id="obsidian-note-type">
+        <option value="">noteType: tous</option>
+        <option value="theory">theory</option>
+        <option value="practice">practice</option>
+        <option value="reflection">reflection</option>
+        <option value="artifacts">artifacts</option>
+      </select>
+      <select id="obsidian-recency">
+        <option value="">Récence: all</option>
+        <option value="7">7 jours</option>
+        <option value="30">30 jours</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Bibliothèque PDF locale (RAG)</h3>
+    <div class="row">
+      <input id="pdf-title" placeholder="Titre du PDF" style="min-width:220px" />
+      <input id="pdf-file" type="file" accept="application/pdf" />
+      <button onclick="uploadPdf()">Uploader PDF</button>
+      <button onclick="refreshPdfs()">Rafraîchir</button>
+      <label><input id="use-rag" type="checkbox" checked /> Utiliser RAG</label>
+      <span id="pdf-status"></span>
+    </div>
+    <div id="pdfs" class="pdf-list"></div>
+    <p class="muted">Sélectionnez un ou plusieurs PDF: seules ces sources seront utilisées dans la réponse IA. <span id="pdf-selected-info"></span></p>
+    <div class="row" style="margin-top:8px">
+      <label>Niveau étudiant
+        <select id="student-level">
+          <option value="novice">novice</option>
+          <option value="intermédiaire">intermédiaire</option>
+          <option value="expert">expert</option>
+        </select>
+      </label>
+      <label>Confiance (1-5) <input id="confidence" type="number" min="1" max="5" value="3" style="width:70px" /></label>
+      <label><input id="strict-grounding" type="checkbox" checked /> Grounding strict</label>
+      <label>Type doc
+        <select id="doc-type-filter">
+          <option value="">Tous</option>
+          <option value="theory">theory</option>
+          <option value="practice">practice</option>
+          <option value="reflection">reflection</option>
+          <option value="artifacts">artifacts</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Conversations</h3>
+      <div class="row">
+        <button onclick="createConversation()">Nouveau fil</button>
+        <input id="conversation-filter" placeholder="Filtrer les discussions" style="flex:1;min-width:160px" oninput="loadConversations()" />
+      </div>
+      <div id="conversations"></div>
+    </div>
+
+    <div class="card">
+      <h3>Chat</h3>
+      <div id="messages" style="min-height:280px;max-height:420px;overflow:auto"></div>
+      <textarea id="prompt" rows="4" style="width:100%">Aide-moi à créer un plan de séance volleyball à partir des PDF sélectionnés.</textarea>
+      <div style="margin-top:8px">
+        <button onclick="sendMessage()">Envoyer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let pseudo = localStorage.getItem('pseudo') || '';
+let selectedModel = localStorage.getItem('model') || '';
+let currentConversationId = null;
+let selectedPdfIds = [];
+const PRESET_MODELS = ['gpt-oss:20b', 'llama3.1', 'llama3.2', 'mistral', 'qwen2.5'];
+
+async function readErrorMessage(res){
+  try{
+    const data = await res.json();
+    return data.detail || JSON.stringify(data);
+  }catch{
+    return await res.text();
+  }
+}
+
+function getHeaders(extra = {}) {
+  if (!pseudo) throw new Error('Pseudo requis');
+  return { 'X-Pseudo': pseudo, ...extra };
+}
+
+async function api(path, opts={}){
+  const headers = opts.headers || {};
+  if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+  Object.assign(headers, getHeaders());
+  const res = await fetch(path, {...opts, headers});
+  if (!res.ok) throw new Error(await readErrorMessage(res));
+  return res;
+}
+
+function fillModelSelect(models){
+  const select = document.getElementById('model');
+  select.innerHTML = '';
+  const merged = [...new Set([...PRESET_MODELS, ...(models||[])])];
+  merged.forEach((m) => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    select.appendChild(opt);
+  });
+  if (selectedModel && merged.includes(selectedModel)) {
+    select.value = selectedModel;
+  } else if (merged.length) {
+    select.value = merged[0];
+  }
+}
+
+async function loadModels() {
+  try {
+    const res = await fetch('/chat/models');
+    const data = await res.json();
+    fillModelSelect(data.models || []);
+  } catch {
+    fillModelSelect([]);
+  }
+}
+
+function setOtherModel(){
+  const other = document.getElementById('other-model').value.trim();
+  if(!other) return;
+  const select = document.getElementById('model');
+  if(!Array.from(select.options).find(o => o.value === other)){
+    const opt = document.createElement('option');
+    opt.value = other;
+    opt.textContent = other + ' (OTHER)';
+    select.appendChild(opt);
+  }
+  select.value = other;
+  selectedModel = other;
+  localStorage.setItem('model', selectedModel);
+  document.getElementById('session-status').innerText = `🧠 Modèle sélectionné: ${selectedModel}`;
+}
+
+async function pullCurrentModel(){
+  try{
+    const model = document.getElementById('model').value || document.getElementById('other-model').value.trim();
+    if(!model) throw new Error('Sélectionnez ou saisissez un modèle');
+    document.getElementById('session-status').innerText = `⏳ Pull en cours: ${model}`;
+    const res = await fetch('/chat/models/pull', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model})
+    });
+    if(!res.ok) throw new Error(await readErrorMessage(res));
+    await loadModels();
+  await loadObsidianStatus();
+    document.getElementById('model').value = model;
+    selectedModel = model;
+    localStorage.setItem('model', selectedModel);
+    document.getElementById('session-status').innerText = `✅ Modèle prêt: ${model}`;
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function startSession(){
+  try{
+    pseudo = document.getElementById('pseudo').value.trim();
+    selectedModel = document.getElementById('model').value;
+    if(!pseudo) throw new Error('Pseudo obligatoire');
+    localStorage.setItem('pseudo', pseudo);
+    localStorage.setItem('model', selectedModel);
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo} | modèle: ${selectedModel}`;
+    await Promise.all([loadConversations(), refreshPdfs()]);
+  }catch(e){
+    document.getElementById('session-status').innerText = '❌ ' + e.message;
+  }
+}
+
+async function uploadPdf(){
+  try{
+    const title = document.getElementById('pdf-title').value.trim();
+    const fileInput = document.getElementById('pdf-file');
+    const file = fileInput.files && fileInput.files[0];
+    if(!title) throw new Error('Titre PDF requis');
+    if(!file) throw new Error('Choisir un fichier PDF');
+    const form = new FormData();
+    form.set('title', title);
+    form.set('file', file);
+    document.getElementById('pdf-status').innerText = '⏳ Upload/ingestion...';
+    const res = await fetch('/library/upload', { method:'POST', headers:getHeaders(), body:form });
+    if(!res.ok) throw new Error(await readErrorMessage(res));
+    document.getElementById('pdf-status').innerText = '✅ PDF envoyé';
+    fileInput.value = '';
+    await refreshPdfs();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+function updateSelectedPdfInfo(){
+  const n = selectedPdfIds.length;
+  document.getElementById('pdf-selected-info').innerText = n ? `${n} sélectionné(s)` : 'aucun sélectionné';
+}
+
+async function renamePdf(docId){
+  const current = document.querySelector(`button[data-rename-id="${docId}"]`)?.getAttribute('data-current-title') || '';
+  const next = prompt('Nouveau nom du PDF :', current);
+  if(next === null) return;
+  const title = next.trim();
+  if(!title) return;
+  try{
+    await api(`/library/documents/${docId}`, {method:'PATCH', body: JSON.stringify({title})});
+    document.getElementById('pdf-status').innerText = '✅ PDF renommé';
+    await refreshPdfs();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function deletePdf(docId){
+  if(!confirm('Supprimer ce PDF ?')) return;
+  try{
+    await api(`/library/documents/${docId}`, {method:'DELETE'});
+    selectedPdfIds = selectedPdfIds.filter(x => x !== docId);
+    document.getElementById('pdf-status').innerText = '✅ PDF supprimé';
+    await refreshPdfs();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+function renderPdfs(items){
+  const box = document.getElementById('pdfs');
+  box.innerHTML = '';
+  if(!items.length){
+    box.innerHTML = '<span class="muted">Aucun PDF pour le moment.</span>';
+    updateSelectedPdfInfo();
+    return;
+  }
+  items.forEach(d=>{
+    const row = document.createElement('div');
+    row.style.marginBottom = '6px';
+    const enabled = d.status === 'ready';
+    const checked = enabled && selectedPdfIds.includes(d.id) ? 'checked' : '';
+    const disabled = enabled ? '' : 'disabled';
+    const note = d.status === 'failed' ? ' (ingestion échouée, fallback local activé)' : '';
+    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}${note}</label>
+      <button data-rename-id="${d.id}" data-current-title="${String(d.title).replace(/"/g, '&quot;')}" style="margin-left:8px">Renommer</button>
+      <button data-delete-id="${d.id}" style="margin-left:6px;background:#b42318;border-color:#941b12">Supprimer</button>`;
+    box.appendChild(row);
+  });
+  box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const id = Number(cb.getAttribute('data-id'));
+      if(cb.checked){
+        if(!selectedPdfIds.includes(id)) selectedPdfIds.push(id);
+      }else{
+        selectedPdfIds = selectedPdfIds.filter(x=>x!==id);
+      }
+      updateSelectedPdfInfo();
+    });
+  });
+  box.querySelectorAll('button[data-rename-id]').forEach(btn=>{
+    btn.addEventListener('click', ()=> renamePdf(Number(btn.getAttribute('data-rename-id'))));
+  });
+  box.querySelectorAll('button[data-delete-id]').forEach(btn=>{
+    btn.addEventListener('click', ()=> deletePdf(Number(btn.getAttribute('data-delete-id'))));
+  });
+  updateSelectedPdfInfo();
+}
+
+async function refreshPdfs(){
+  try{
+    const res = await api('/library/documents');
+    const docs = await res.json();
+    selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id && d.status === "ready"));
+    renderPdfs(docs);
+    updateSelectedPdfInfo();
+  }catch(e){
+    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function deleteConversation(id){
+  if(!confirm('Supprimer ce fil de discussion ?')) return;
+  try{
+    await api(`/chat/conversations/${id}`, {method:'DELETE'});
+    if(currentConversationId === id){
+      currentConversationId = null;
+      document.getElementById('messages').innerHTML = '';
+    }
+    await loadConversations();
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function renameConversation(id, currentTitle){
+  const next = prompt('Nouveau titre du fil :', currentTitle || '');
+  if(next === null) return;
+  const title = next.trim();
+  if(!title) return;
+  try{
+    await api(`/chat/conversations/${id}`, {method:'PATCH', body: JSON.stringify({title})});
+    if(currentConversationId === id) document.getElementById('session-status').innerText = `✅ Fil renommé: ${title}`;
+    await loadConversations();
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+function renderConversationItem(container, c, prepend=false){
+  const id = Number(c?.id);
+  if(!Number.isFinite(id)) return;
+  const row = document.createElement('div');
+  row.style.display='flex';
+  row.style.gap='6px';
+  row.style.margin='8px 0';
+
+  const openBtn = document.createElement('button');
+  openBtn.textContent = `${c.title || 'Sans titre'} (${c.mode || 'co_design'})`;
+  openBtn.style.flex='1';
+  openBtn.style.textAlign='left';
+  if(currentConversationId === id) openBtn.style.outline = '2px solid #84a9ff';
+  openBtn.onclick = ()=> loadMessages(id);
+
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✏️';
+  renameBtn.title = 'Renommer le fil';
+  renameBtn.onclick = ()=> renameConversation(id, c.title || '');
+
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '🗑';
+  delBtn.title = 'Supprimer le fil';
+  delBtn.style.background = '#b42318'; delBtn.style.borderColor='#941b12';
+  delBtn.onclick = ()=> deleteConversation(id);
+
+  row.appendChild(openBtn);
+  row.appendChild(renameBtn);
+  row.appendChild(delBtn);
+  if(prepend) container.prepend(row); else container.appendChild(row);
+}
+
+function addConversationButton(c){
+  const el = document.getElementById('conversations');
+  renderConversationItem(el, c, true);
+}
+
+function normalizeConversationPayload(data){
+  if(!data) return null;
+  if(Array.isArray(data)) return data[0] || null;
+  if(data.conversation) return data.conversation;
+  return data;
+}
+
+async function createConversation(){
+  try{
+    const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
+    const raw = await res.json();
+    const conv = normalizeConversationPayload(raw);
+    const id = Number(conv?.id);
+    if (!Number.isFinite(id)) {
+      const items = await loadConversations();
+      if(items.length){
+        await loadMessages(items[0].id);
+        return items[0];
+      }
+      throw new Error('Conversation invalide retournée par l’API');
+    }
+    currentConversationId = id;
+    addConversationButton({...conv, id});
+    await loadMessages(id);
+    return {...conv, id};
+  }catch(e){
+    document.getElementById('session-status').innerText = `❌ ${e.message}`;
+    return null;
+  }
+}
+
+async function loadConversations(){
+  const res = await api('/chat/conversations');
+  const raw = await res.json();
+  const items = Array.isArray(raw) ? raw : (raw?.items || []);
+  const q = (document.getElementById('conversation-filter')?.value || "").trim().toLowerCase();
+  const filtered = q ? items.filter(c => `${c.title || ""} ${c.mode || ""}`.toLowerCase().includes(q)) : items;
+  const el = document.getElementById('conversations');
+  el.innerHTML = '';
+  filtered.forEach(c=> renderConversationItem(el, c));
+  return filtered.filter(c=>Number.isFinite(Number(c?.id)));
+}
+
+async function loadMessages(id){
+  if (id === undefined || id === null || Number.isNaN(Number(id))) return;
+  currentConversationId = Number(id);
+  const res = await api(`/chat/conversations/${id}/messages`);
+  const msgs = await res.json();
+  const box = document.getElementById('messages');
+  box.innerHTML='';
+  msgs.forEach(m=>appendMessage(m.role, m.content));
+}
+
+function appendMessage(role, content){
+  const box = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'assistant' ? 'assistant' : '');
+  div.innerHTML = `<b>${role}:</b> ${String(content).replace(/\n/g,'<br/>')}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+
+
+function parseCsv(input){
+  return (input||'').split(',').map(x=>x.trim()).filter(Boolean);
+}
+
+async function loadObsidianStatus(){
+  try{
+    const res = await api('/obsidian/status');
+    const data = await res.json();
+    document.getElementById('obsidian-mode').value = data.config.mode || 'filesystem';
+    document.getElementById('obsidian-vault-path').value = data.config.vault_path || '';
+    document.getElementById('obsidian-rest-url').value = data.config.rest_api_base_url || '';
+    const st = data.index_status || {};
+    document.getElementById('obsidian-status').innerText = `✅ last:${st.last_run||'n/a'} indexed:${st.indexed||0} skipped:${st.skipped||0} errors:${st.errors||0}`;
+  }catch(e){
+    document.getElementById('obsidian-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function runObsidianIndex(){
+  try{
+    const payload = {
+      mode: document.getElementById('obsidian-mode').value,
+      vault_path: document.getElementById('obsidian-vault-path').value.trim() || null,
+      rest_api_base_url: document.getElementById('obsidian-rest-url').value.trim() || null,
+      api_key: document.getElementById('obsidian-api-key').value.trim() || null,
+      incremental_indexing: true,
+    };
+    document.getElementById('obsidian-status').innerText = '⏳ Indexation...';
+    const res = await api('/obsidian/index', {method:'POST', body: JSON.stringify(payload)});
+    const data = await res.json();
+    document.getElementById('obsidian-status').innerText = `✅ indexed:${data.stats.indexed} skipped:${data.stats.skipped} deleted:${data.stats.deleted} errors:${data.stats.errors}`;
+  }catch(e){
+    document.getElementById('obsidian-status').innerText = `❌ ${e.message}`;
+  }
+}
+
+async function sendMessage(){
+  if(!currentConversationId){
+    const conv = await createConversation();
+    if(!conv || !currentConversationId) return;
+  }
+  const content = document.getElementById('prompt').value;
+  const useRag = document.getElementById('use-rag').checked;
+  selectedModel = document.getElementById('model').value;
+  const uniqueIds = [...new Set(selectedPdfIds.map(Number).filter(Number.isFinite))];
+  if(useRag && uniqueIds.length === 0){
+    document.getElementById('pdf-status').innerText = "⚠️ Activez au moins un PDF prêt, ou décochez Utiliser RAG.";
+  }
+  localStorage.setItem('model', selectedModel);
+
+  appendMessage('user', content);
+  const aiNode = appendMessage('assistant', '');
+
+  const selectedDocType = document.getElementById('doc-type-filter').value;
+  const obsNoteType = document.getElementById('obsidian-note-type').value;
+  const recency = document.getElementById('obsidian-recency').value;
+  const obsTags = parseCsv(document.getElementById('obsidian-tags').value);
+  const payload = {
+    content,
+    use_rag: useRag,
+    collection_ids: uniqueIds,
+    model: selectedModel,
+    student_level: document.getElementById('student-level').value,
+    confidence: Number(document.getElementById('confidence').value || 3),
+    strict_grounding: document.getElementById('strict-grounding').checked,
+    metadata_filters: selectedDocType ? {doc_types:[selectedDocType]} : null,
+    use_obsidian: document.getElementById('use-obsidian').checked,
+    prefer_obsidian: document.getElementById('prefer-obsidian').checked,
+    obsidian_filters: {
+      tags: obsTags,
+      noteType: obsNoteType ? [obsNoteType] : [],
+      recency_days: recency ? Number(recency) : null,
+    },
+  };
+
+  const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
+    method:'POST',
+    headers:getHeaders({'Content-Type':'application/json'}),
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok){
+    aiNode.innerHTML = `<b>assistant:</b> ❌ ${await readErrorMessage(res)}`;
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let built = '';
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    const chunk = decoder.decode(value);
+    chunk.split('\n\n').forEach(line=>{
+      if(!line.startsWith('data:')) return;
+      const data = JSON.parse(line.slice(5).trim());
+      if(data.token){
+        built += data.token;
+        aiNode.innerHTML = `<b>assistant:</b> ${built.replace(/\n/g,'<br/>')}`;
+      }
+      if(data.error){
+        aiNode.innerHTML = `<b>assistant:</b> ❌ ${data.error}`;
+      }
+      if(data.done && Array.isArray(data.citations)){
+        const src = document.createElement('div');
+        src.className='src-drawer';
+        src.innerHTML = '<b>Sources utilisées</b>' + data.citations.map(c=>{
+          const label = c.source === 'obsidian' ? `Obsidian: ${c.file_path||''}${c.heading?('#'+c.heading):''}` : `PDF: doc ${c.doc_id||''} p.${c.page||''}`;
+          const score = (typeof c.score === 'number') ? ` · score ${(c.score*100).toFixed(0)}%` : '';
+          return `<div><span class="src-pill">${c.source||'source'}</span>${label}${score}<br/><span class="muted">${c.excerpt||''}</span></div>`;
+        }).join('');
+        aiNode.appendChild(src);
+      }
+    });
+  }
+}
+
+(async function init(){
+  document.getElementById('pseudo').value = pseudo || 'Max';
+  await loadModels();
+  await loadObsidianStatus();
+  if (selectedModel && Array.from(document.getElementById('model').options).find(o => o.value === selectedModel)) {
+    document.getElementById('model').value = selectedModel;
+  }
+  const prompt = document.getElementById('prompt');
+  prompt.addEventListener('keydown', (e)=>{
+    if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  if (pseudo) {
+    document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
+    try { await Promise.all([loadConversations(), refreshPdfs()]); } catch {}
+  }
+})();
+</script>
+</body>
+</html>
