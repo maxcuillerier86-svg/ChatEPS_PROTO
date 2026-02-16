@@ -22,6 +22,13 @@ class MessageIn(BaseModel):
     use_obsidian: bool = True
     prefer_obsidian: bool = False
     obsidian_filters: dict[str, Any] | None = None
+    autosave_to_obsidian: bool = False
+    obsidian_save_mode: str = "manual-only"  # per-message | daily-note-append | manual-only | canonical-only
+    obsidian_target_folder: str | None = None
+    mark_canonical: bool = False
+    include_sources_in_save: bool = True
+    include_trace_in_save: bool = True
+    include_retrieved_summary_in_save: bool = False
 
 
 class MessageOut(BaseModel):

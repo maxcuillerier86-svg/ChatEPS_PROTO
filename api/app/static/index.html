@@ -87,6 +87,19 @@
         <option value="7">7 jours</option>
         <option value="30">30 jours</option>
       </select>
+
+      <label><input id="autosave-obsidian" type="checkbox" /> Auto-save to Obsidian</label>
+      <select id="obsidian-save-mode">
+        <option value="manual-only">manual-only</option>
+        <option value="per-message">per-message</option>
+        <option value="daily-note-append">daily-note-append</option>
+        <option value="canonical-only">canonical-only</option>
+      </select>
+      <input id="obsidian-target-folder" placeholder="Dossier cible (ex: ChatEPS/session-1)" style="min-width:220px" />
+      <label><input id="mark-canonical" type="checkbox" /> Mark canonical</label>
+      <label><input id="save-include-sources" type="checkbox" checked /> inclure sources</label>
+      <label><input id="save-include-trace" type="checkbox" checked /> inclure trace</label>
+      <label><input id="save-include-summary" type="checkbox" /> inclure résumé contexte</label>
     </div>
   </div>
 
@@ -501,7 +514,7 @@ async function loadObsidianStatus(){
     document.getElementById('obsidian-vault-path').value = data.config.vault_path || '';
     document.getElementById('obsidian-rest-url').value = data.config.rest_api_base_url || '';
     const st = data.index_status || {};
-    document.getElementById('obsidian-status').innerText = `✅ last:${st.last_run||'n/a'} indexed:${st.indexed||0} skipped:${st.skipped||0} errors:${st.errors||0}`;
+    const conn = data.connection || {}; const restOk = conn.rest?.ok ? 'REST OK' : 'REST KO'; const fsOk = conn.filesystem?.ok ? 'FS OK' : 'FS KO'; document.getElementById('obsidian-status').innerText = `✅ ${restOk} / ${fsOk} | last:${st.last_run||'n/a'} indexed:${st.indexed||0} skipped:${st.skipped||0} errors:${st.errors||0}`;
   }catch(e){
     document.getElementById('obsidian-status').innerText = `❌ ${e.message}`;
   }
@@ -562,6 +575,13 @@ async function sendMessage(){
       noteType: obsNoteType ? [obsNoteType] : [],
       recency_days: recency ? Number(recency) : null,
     },
+    autosave_to_obsidian: document.getElementById('autosave-obsidian').checked,
+    obsidian_save_mode: document.getElementById('obsidian-save-mode').value,
+    obsidian_target_folder: document.getElementById('obsidian-target-folder').value.trim() || null,
+    mark_canonical: document.getElementById('mark-canonical').checked,
+    include_sources_in_save: document.getElementById('save-include-sources').checked,
+    include_trace_in_save: document.getElementById('save-include-trace').checked,
+    include_retrieved_summary_in_save: document.getElementById('save-include-summary').checked,
   };
 
   const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
@@ -594,11 +614,48 @@ async function sendMessage(){
       if(data.done && Array.isArray(data.citations)){
         const src = document.createElement('div');
         src.className='src-drawer';
-        src.innerHTML = '<b>Sources utilisées</b>' + data.citations.map(c=>{
+        const saveBadge = data.obsidian_save && data.obsidian_save.ok ? `<span class="src-pill">Saved ✅</span>` : '';
+        src.innerHTML = '<b>Sources utilisées</b> '+saveBadge + data.citations.map(c=>{
           const label = c.source === 'obsidian' ? `Obsidian: ${c.file_path||''}${c.heading?('#'+c.heading):''}` : `PDF: doc ${c.doc_id||''} p.${c.page||''}`;
           const score = (typeof c.score === 'number') ? ` · score ${(c.score*100).toFixed(0)}%` : '';
           return `<div><span class="src-pill">${c.source||'source'}</span>${label}${score}<br/><span class="muted">${c.excerpt||''}</span></div>`;
         }).join('');
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save to Obsidian';
+        saveBtn.style.marginTop = '8px';
+        saveBtn.onclick = async () => {
+          try {
+            const payloadSave = {
+              question: content,
+              answer: built,
+              conversation_id: currentConversationId,
+              model_name: selectedModel,
+              student_level: document.getElementById('student-level').value,
+              confidence: Number(document.getElementById('confidence').value || 3),
+              sources: data.citations,
+              save_mode: document.getElementById('obsidian-save-mode').value,
+              target_folder: document.getElementById('obsidian-target-folder').value.trim() || null,
+              include_sources: document.getElementById('save-include-sources').checked,
+              include_trace: document.getElementById('save-include-trace').checked,
+              include_retrieved_summary: document.getElementById('save-include-summary').checked,
+              short_id: String(Date.now()).slice(-6),
+              topic: document.getElementById('conversation-filter').value || 'chat-eps',
+              session_id: pseudo || 'session',
+            };
+            const rs = await api('/obsidian/save', {method:'POST', body: JSON.stringify(payloadSave)});
+            const saved = await rs.json();
+            const info = document.createElement('div');
+            info.className='muted';
+            info.innerHTML = `✅ Saved: ${saved.saved?.path || ''} ${saved.saved?.open_uri ? `<a href="${saved.saved.open_uri}">Open</a>`:''}`;
+            src.appendChild(info);
+          } catch(e){
+            const info = document.createElement('div');
+            info.className='muted';
+            info.textContent = `❌ Save error: ${e.message}`;
+            src.appendChild(info);
+          }
+        };
+        src.appendChild(saveBtn);
         aiNode.appendChild(src);
       }
     });

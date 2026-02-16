@@ -5,16 +5,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.deps import get_actor_user
 from app.models.entities import Conversation, Message, TraceEvent, User
 from app.schemas.chat import ConversationCreate, MessageIn
 from app.services.ollama import chat_stream, check_ollama, list_models, pull_model
+from app.services.llm.tools.obsidianTools import execute_obsidian_tool, obsidian_tool_schemas
 from app.services.query_processing import build_student_context, classify_intent, expand_query_semantically
 from app.services.rag import compress_context, retrieve
 from app.services.obsidian_rag.fusion.resultFusion import fuse_results
 from app.services.obsidian_rag.rerank.reranker import heuristic_rerank
 from app.services.obsidian_rag.retrieval.obsidianRetriever import retrieve_obsidian
+from app.services.obsidian.ObsidianClient import ObsidianClient
+from app.services.obsidian.ObsidianSource import ObsidianConfig
+from app.services.obsidian.ObsidianRouter import detect_obsidian_intents, extract_tool_calls, is_canonical_knowledge
 from app.services.tracing import log_event
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -201,11 +206,14 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
     expanded_queries = expand_query_semantically(payload.content, intent)
     student_context = build_student_context(payload.student_level, payload.confidence, pseudo=user_name)
 
+    obs_intents = detect_obsidian_intents(payload.content)
+    use_obsidian = bool(payload.use_obsidian or obs_intents.get("note_query"))
+
     citations: list[dict] = []
     context = ""
     retrieval_ms = 0.0
 
-    if payload.use_rag and (payload.collection_ids or payload.metadata_filters or payload.use_obsidian):
+    if payload.use_rag and (payload.collection_ids or payload.metadata_filters or use_obsidian):
         t0 = perf_counter()
         try:
             target_k = max(8, len(payload.collection_ids or []) * 3)
@@ -222,7 +230,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                 h.setdefault("source", "pdf")
 
             obsidian_hits = []
-            if payload.use_obsidian:
+            if use_obsidian:
                 try:
                     obsidian_hits = await retrieve_obsidian(
                         payload.content,
@@ -286,6 +294,7 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
         final_user_prompt += f"\nRequêtes d'expansion: {', '.join(expanded_queries)}"
     final_user_prompt += context
     final_user_prompt += "\nRespecte strictement les citations quand des sources sont fournies, et distingue clairement Obsidian vs PDF."
+    final_user_prompt += "\nSi une opération Obsidian est requise, génère exclusivement un bloc <tool_call>{\"tool\":\"obsidian.search|obsidian.write|obsidian.append|obsidian.open|obsidian.status\",\"args\":{...}}</tool_call>. Ne fabrique aucune action de fichier hors tool call."
     if payload.strict_grounding:
         final_user_prompt += " Si les preuves manquent, réponds uniquement 'Sources insuffisantes'."
     final_user_prompt += " Termine par auto-évaluation 1-5."
@@ -307,6 +316,96 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                     output_text = collected
                     if payload.strict_grounding and payload.use_rag and not citations:
                         output_text = "Sources insuffisantes pour répondre de manière ancrée sur les PDF sélectionnés."
+
+                    tool_results = []
+                    try:
+                        obs_cfg = ObsidianConfig(
+                            mode=settings.obsidian_mode,
+                            vault_path=settings.obsidian_vault_path,
+                            rest_api_base_url=settings.obsidian_rest_api_base_url,
+                            api_key=settings.obsidian_api_key,
+                            included_folders=[x.strip() for x in settings.obsidian_included_folders.split(",") if x.strip()],
+                            excluded_folders=[x.strip() for x in settings.obsidian_excluded_folders.split(",") if x.strip()],
+                            excluded_patterns=[x.strip() for x in settings.obsidian_excluded_patterns.split(",") if x.strip()],
+                            max_notes_to_index=settings.obsidian_max_notes_to_index,
+                            max_note_bytes=settings.obsidian_max_note_bytes,
+                            incremental_indexing=settings.obsidian_incremental_indexing,
+                        )
+                        obs_client = ObsidianClient(obs_cfg)
+                        for call in extract_tool_calls(output_text):
+                            tool_results.append(await execute_obsidian_tool(obs_client, call))
+                    except Exception:
+                        tool_results = []
+
+                    save_mode = payload.obsidian_save_mode or "manual-only"
+                    should_autosave = bool(payload.autosave_to_obsidian and save_mode != "manual-only")
+                    if save_mode == "canonical-only":
+                        should_autosave = should_autosave and is_canonical_knowledge(output_text, payload.content, payload.mark_canonical)
+                    if obs_intents.get("save"):
+                        should_autosave = True
+
+                    obsidian_save = None
+                    if should_autosave:
+                        try:
+                            obs_cfg = ObsidianConfig(
+                            mode=settings.obsidian_mode,
+                            vault_path=settings.obsidian_vault_path,
+                            rest_api_base_url=settings.obsidian_rest_api_base_url,
+                            api_key=settings.obsidian_api_key,
+                            included_folders=[x.strip() for x in settings.obsidian_included_folders.split(",") if x.strip()],
+                            excluded_folders=[x.strip() for x in settings.obsidian_excluded_folders.split(",") if x.strip()],
+                            excluded_patterns=[x.strip() for x in settings.obsidian_excluded_patterns.split(",") if x.strip()],
+                            max_notes_to_index=settings.obsidian_max_notes_to_index,
+                            max_note_bytes=settings.obsidian_max_note_bytes,
+                            incremental_indexing=settings.obsidian_incremental_indexing,
+                        )
+                            obs_client = ObsidianClient(obs_cfg)
+                            save_payload = {
+                                "session_id": f"conv-{conv_id}",
+                                "short_id": f"m{conv_id}",
+                                "topic": conv_mode,
+                                "save_mode": save_mode,
+                                "target_folder": payload.obsidian_target_folder or f"ChatEPS/{conv_id}",
+                                "question": payload.content,
+                                "answer": output_text,
+                                "conversation_id": conv_id,
+                                "model_name": payload.model,
+                                "student_level": payload.student_level,
+                                "confidence": payload.confidence,
+                                "sources": citations,
+                                "learning_trace": {
+                                    "intent": intent,
+                                    "ai_influence": "high" if len(citations) > 1 else "medium",
+                                },
+                                "rag_flags": {"grounding_strict": payload.strict_grounding, "top_k": len(citations)},
+                                "include_sources": payload.include_sources_in_save,
+                                "include_trace": payload.include_trace_in_save,
+                                "include_retrieved_summary": payload.include_retrieved_summary_in_save,
+                            }
+                            # inline save
+                            from app.services.obsidian.formatters.obsidianMarkdown import format_obsidian_markdown
+                            note_name = obs_client.default_note_name(save_payload["topic"], save_payload["short_id"])
+                            note_path = f"{save_payload['target_folder'].strip('/')}/{note_name}" if save_mode != "daily-note-append" else f"{save_payload['target_folder'].strip('/')}/{__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d')}.md"
+                            md = format_obsidian_markdown(
+                                question=save_payload["question"],
+                                answer=save_payload["answer"],
+                                session_id=save_payload["session_id"],
+                                conversation_id=save_payload["conversation_id"],
+                                message_id=None,
+                                model_name=save_payload["model_name"],
+                                student_level=save_payload["student_level"],
+                                confidence=save_payload["confidence"],
+                                sources=save_payload["sources"],
+                                learning_trace=save_payload["learning_trace"],
+                                rag_flags=save_payload["rag_flags"],
+                                include_sources=save_payload["include_sources"],
+                                include_trace=save_payload["include_trace"],
+                                include_retrieved_summary=save_payload["include_retrieved_summary"],
+                            )
+                            obsidian_save = await (obs_client.append_note(note_path, md) if save_mode == "daily-note-append" else obs_client.create_note(note_path, md))
+                        except Exception:
+                            obsidian_save = {"ok": False}
+
                     with SessionLocal() as writer_db:
                         ai_msg = Message(
                             conversation_id=conv_id,
@@ -320,6 +419,9 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                                 "strict_grounding": payload.strict_grounding,
                                 "retrieval_ms": round(retrieval_ms, 2),
                                 "source_counts": {"pdf": len([c for c in citations if c.get("source") == "pdf"]), "obsidian": len([c for c in citations if c.get("source") == "obsidian"])},
+                                "tool_results": tool_results,
+                                "obsidian_save": obsidian_save,
+                                "available_tools": [t.get("name") for t in obsidian_tool_schemas()],
                             },
                         )
                         writer_db.add(ai_msg)
@@ -338,10 +440,13 @@ async def stream_reply(conversation_id: int, payload: MessageIn, db: Session = D
                                 "intent": intent,
                                 "retrieval_ms": round(retrieval_ms, 2),
                                 "source_counts": {"pdf": len([c for c in citations if c.get("source") == "pdf"]), "obsidian": len([c for c in citations if c.get("source") == "obsidian"])},
+                                "tool_results": tool_results,
+                                "obsidian_save": obsidian_save,
+                                "available_tools": [t.get("name") for t in obsidian_tool_schemas()],
                             },
                             conversation_id=conv_id,
                         )
-                    yield f"data: {json.dumps({'done': True, 'citations': citations})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'citations': citations, 'tool_results': tool_results, 'obsidian_save': obsidian_save})}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': f'Échec chat Ollama: {exc}'})}\n\n"
 

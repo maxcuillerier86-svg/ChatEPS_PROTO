@@ -159,3 +159,33 @@ Voir `docs/RAG_SYSTEM_UPGRADE.md` pour le pipeline détaillé et les templates d
 ```bash
 curl -X POST http://127.0.0.1:8000/obsidian/index   -H "Content-Type: application/json"   -H "X-Pseudo: Prof"   -d '{"mode":"filesystem","vault_path":"C:/Users/me/Documents/MyVault","incremental_indexing":true}'
 ```
+
+
+## 13) Obsidian auto-save + tool calls (local)
+- Auto-save Obsidian (UI) configurable:
+  - `manual-only`
+  - `per-message`
+  - `daily-note-append`
+  - `canonical-only`
+- Données sauvegardées: question, réponse RAG, citations, contexte étudiant, trace d'apprentissage, identifiants conversation/session.
+- Format markdown standardisé avec frontmatter YAML via `obsidianMarkdown` formatter.
+
+### Tool calls LLM → backend
+Le backend supporte des tool calls structurés (pas d'instructions hallucinées):
+- `obsidian.search`
+- `obsidian.write`
+- `obsidian.append`
+- `obsidian.open`
+- `obsidian.status`
+
+Convention de sortie assistant (si outil requis):
+```text
+<tool_call>{"tool":"obsidian.search","args":{"query":"..."}}</tool_call>
+```
+Le backend exécute puis renvoie le résultat dans les métadonnées du message.
+
+### Endpoint sauvegarde manuelle
+- `POST /obsidian/save`
+  - utilisé par le bouton `Save to Obsidian` sous chaque réponse assistant.
+
+- Guide auto-save/tool-calls Obsidian: `docs/OBSIDIAN_AUTOSAVE_TOOLS.md`.
