@@ -3,497 +3,874 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>chat-EPS</title>
+  <title>chat-EPS – Co-création IA pour l'EPS</title>
   <style>
-    :root{--uqam-blue:#0077c8;--uqam-blue-dark:#0068ae;--uqam-bg:#f2f8fd;--uqam-ink:#123047;--uqam-border:#bfdcf0}
-    body{font-family:Arial,sans-serif;background:var(--uqam-bg);margin:0;color:var(--uqam-ink)}
-    .wrap{max-width:1220px;margin:0 auto;padding:16px}
-    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #e5edf4}
-    input,textarea,button,select{padding:8px;border:1px solid #ccd3dd;border-radius:8px}
-    input:focus,textarea:focus,select:focus{outline:2px solid #b6dfff;border-color:var(--uqam-blue)}
-    button{background:var(--uqam-blue);color:#fff;cursor:pointer;border-color:var(--uqam-blue-dark)}
-    button:hover{background:var(--uqam-blue-dark)}
-    .grid{display:grid;grid-template-columns:1fr 2fr;gap:12px}
-    .msg{padding:8px;border-bottom:1px solid #eef2f6}
-    .assistant{background:#edf6fd}
+    :root{
+      --brand:#0077c8;--brand-dark:#0068ae;--brand-soft:#e7f3fc;
+      --bg:#eef4f9;--surface:#ffffff;--surface-2:#f6fafe;
+      --ink:#12324a;--ink-soft:#5a748a;--border:#d6e3ef;--border-strong:#bcd5ea;
+      --user-bubble:#0077c8;--user-ink:#ffffff;--ai-bubble:#f2f8fd;--ai-ink:#14324a;
+      --ok:#1a7f47;--ok-bg:#e7f7ee;--warn:#b26a00;--warn-bg:#fdf3e2;--err:#b42318;--err-bg:#fdecea;
+      --shadow:0 1px 2px rgba(16,45,70,.06),0 6px 20px rgba(16,45,70,.06);
+      --radius:14px;--radius-sm:10px;
+      --font:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+    }
+    [data-theme="dark"]{
+      --brand:#3aa0e6;--brand-dark:#2b8fd6;--brand-soft:#12324a;
+      --bg:#0d1a26;--surface:#132635;--surface-2:#0f202e;
+      --ink:#e6f0f8;--ink-soft:#93aec4;--border:#22415a;--border-strong:#2e5273;
+      --user-bubble:#2b8fd6;--user-ink:#ffffff;--ai-bubble:#1a3040;--ai-ink:#e6f0f8;
+      --ok:#4cc98a;--ok-bg:#123528;--warn:#e0a642;--warn-bg:#3a2f16;--err:#f08a80;--err-bg:#3a1f1c;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{font-family:var(--font);background:var(--bg);margin:0;color:var(--ink);line-height:1.5}
+
+    /* ---------- Top bar ---------- */
+    .topbar{position:sticky;top:0;z-index:30;background:var(--surface);border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .brand .logo{font-weight:800;font-size:26px;color:var(--brand);letter-spacing:-.5px}
+    .brand .titles h1{margin:0;font-size:17px;color:var(--ink)}
+    .brand .titles p{margin:0;font-size:12px;color:var(--ink-soft)}
+    .top-actions{display:flex;align-items:center;gap:10px}
+    .badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 11px;border-radius:999px;
+      background:var(--surface-2);border:1px solid var(--border);color:var(--ink-soft);white-space:nowrap}
+    .badge.on{background:var(--ok-bg);border-color:transparent;color:var(--ok);font-weight:600}
+    .badge .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.9}
+    .icon-btn{background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:10px;
+      width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px}
+    .icon-btn:hover{background:var(--brand-soft);border-color:var(--border-strong)}
+
+    /* ---------- Layout ---------- */
+    .app{display:grid;grid-template-columns:300px 1fr 320px;gap:14px;max-width:1500px;margin:0 auto;padding:14px;
+      height:calc(100vh - 61px)}
+    .col{min-height:0;display:flex;flex-direction:column;gap:14px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+      box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0}
+    .card > .card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+      padding:13px 15px;border-bottom:1px solid var(--border)}
+    .card-head h3{margin:0;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+    .card-head .step{font-size:11px;font-weight:700;background:var(--brand);color:#fff;width:20px;height:20px;
+      border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
+    .card-body{padding:14px 15px;overflow:auto}
+    .card.flex1{flex:1}
+
+    /* ---------- Controls ---------- */
+    label.field{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 5px}
+    input,textarea,select{font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--border-strong);
+      border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);width:100%}
+    input::placeholder,textarea::placeholder{color:var(--ink-soft)}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .muted{color:#667085;font-size:13px}
-    .pdf-list{max-height:170px;overflow:auto;border:1px solid var(--uqam-border);border-radius:8px;padding:8px;background:#fbfdff}
-    .brand-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
-    .brand-mark{font-size:12px;color:#5a7890;background:#f5faff;border:1px solid var(--uqam-border);padding:4px 8px;border-radius:999px}
+    .stack{display:flex;flex-direction:column;gap:11px}
+    button{font-family:inherit;font-size:14px;font-weight:600;padding:9px 14px;border-radius:var(--radius-sm);
+      border:1px solid var(--brand-dark);background:var(--brand);color:#fff;cursor:pointer;transition:filter .12s,transform .04s}
+    button:hover{filter:brightness(1.06)}
+    button:active{transform:translateY(1px)}
+    button:disabled{opacity:.55;cursor:not-allowed;filter:none}
+    button.ghost{background:var(--surface-2);color:var(--ink);border-color:var(--border)}
+    button.ghost:hover{background:var(--brand-soft);border-color:var(--border-strong)}
+    button.danger{background:transparent;color:var(--err);border-color:transparent;padding:6px 8px}
+    button.danger:hover{background:var(--err-bg)}
+    button.sm{padding:6px 10px;font-size:12.5px}
+    button.block{width:100%}
+    .muted{color:var(--ink-soft);font-size:12.5px}
+    details.adv{border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:0 12px}
+    details.adv summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:10px 0;list-style:none}
+    details.adv summary::-webkit-details-marker{display:none}
+    details.adv summary::before{content:"▸ ";color:var(--brand)}
+    details.adv[open] summary::before{content:"▾ "}
+    details.adv .stack{padding:0 0 12px}
+
+    /* ---------- Conversations ---------- */
+    .conv{display:flex;align-items:center;gap:6px;padding:9px 10px;border-radius:var(--radius-sm);cursor:pointer;
+      border:1px solid transparent}
+    .conv:hover{background:var(--surface-2)}
+    .conv.active{background:var(--brand-soft);border-color:var(--border-strong)}
+    .conv .conv-main{flex:1;min-width:0}
+    .conv .conv-title{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .conv .conv-mode{font-size:11px;color:var(--ink-soft)}
+    .conv .conv-actions{display:flex;gap:2px;opacity:0;transition:opacity .12s}
+    .conv:hover .conv-actions,.conv.active .conv-actions{opacity:1}
+    .conv .conv-actions button{padding:4px 6px;background:transparent;border:none;color:var(--ink-soft);font-size:13px}
+    .conv .conv-actions button:hover{color:var(--brand)}
+
+    /* ---------- PDF library ---------- */
+    .pdf-item{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid var(--border);
+      border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface-2)}
+    .pdf-item.on{border-color:var(--brand);background:var(--brand-soft)}
+    .pdf-item input[type=checkbox]{width:17px;height:17px;margin-top:2px;accent-color:var(--brand);flex:none}
+    .pdf-item .pdf-main{flex:1;min-width:0}
+    .pdf-item .pdf-title{font-size:13px;font-weight:600;word-break:break-word}
+    .pdf-item .pdf-actions{display:flex;gap:2px}
+    .pdf-item .pdf-actions button{padding:4px 6px;background:transparent;border:none;color:var(--ink-soft);font-size:12.5px}
+    .pdf-item .pdf-actions button:hover{color:var(--brand)}
+    .status-badge{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;margin-top:4px;text-transform:uppercase;letter-spacing:.3px}
+    .status-ready{background:var(--ok-bg);color:var(--ok)}
+    .status-failed{background:var(--err-bg);color:var(--err)}
+    .status-pending{background:var(--warn-bg);color:var(--warn)}
+    .dropzone{border:2px dashed var(--border-strong);border-radius:var(--radius-sm);padding:16px;text-align:center;
+      color:var(--ink-soft);font-size:13px;cursor:pointer;transition:.12s;background:var(--surface-2)}
+    .dropzone:hover,.dropzone.drag{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-dark)}
+    .dropzone b{color:var(--brand-dark)}
+
+    /* ---------- Chat ---------- */
+    .chat-card{flex:1}
+    .messages{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:16px}
+    .empty-chat{margin:auto;text-align:center;max-width:420px;color:var(--ink-soft)}
+    .empty-chat .big{font-size:40px}
+    .empty-chat h2{color:var(--ink);font-size:18px;margin:10px 0 6px}
+    .suggestions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+    .suggestion{text-align:left;background:var(--surface-2);color:var(--ink);border:1px solid var(--border);
+      font-weight:500;font-size:13px;padding:11px 13px}
+    .suggestion:hover{border-color:var(--brand);background:var(--brand-soft)}
+    .turn{display:flex;gap:11px;max-width:100%}
+    .turn.user{flex-direction:row-reverse}
+    .avatar{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+      font-size:16px;font-weight:700}
+    .avatar.ai{background:var(--brand-soft);color:var(--brand-dark);border:1px solid var(--border-strong)}
+    .avatar.user{background:var(--brand);color:#fff}
+    .bubble-wrap{max-width:78%;display:flex;flex-direction:column;gap:6px}
+    .turn.user .bubble-wrap{align-items:flex-end}
+    .bubble{padding:11px 14px;border-radius:16px;font-size:14.5px;word-wrap:break-word;overflow-wrap:anywhere}
+    .turn.ai .bubble{background:var(--ai-bubble);color:var(--ai-ink);border:1px solid var(--border);border-top-left-radius:5px}
+    .turn.user .bubble{background:var(--user-bubble);color:var(--user-ink);border-top-right-radius:5px}
+    .bubble p{margin:0 0 8px}.bubble p:last-child{margin:0}
+    .bubble ul,.bubble ol{margin:6px 0;padding-left:20px}
+    .bubble code{background:rgba(0,0,0,.08);padding:1px 5px;border-radius:5px;font-size:13px}
+    [data-theme="dark"] .bubble code{background:rgba(255,255,255,.12)}
+    .bubble h1,.bubble h2,.bubble h3,.bubble h4{margin:8px 0 4px;font-size:15px}
+    .typing{display:inline-flex;gap:4px;padding:4px 2px}
+    .typing span{width:7px;height:7px;border-radius:50%;background:var(--ink-soft);animation:blink 1.2s infinite both}
+    .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+    @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+    .citations{margin-top:2px;font-size:12px}
+    .citations summary{cursor:pointer;color:var(--brand-dark);font-weight:600}
+    .cite{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-top:6px}
+    .cite b{font-size:12px}.cite .ex{color:var(--ink-soft);font-size:11.5px;display:block;margin-top:2px}
+
+    /* ---------- Composer ---------- */
+    .composer{border-top:1px solid var(--border);padding:12px 14px;background:var(--surface)}
+    .composer .tools{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+    .switch{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;user-select:none}
+    .switch input{position:absolute;opacity:0;width:0;height:0}
+    .switch .track{width:38px;height:22px;border-radius:999px;background:var(--border-strong);position:relative;transition:.15s;flex:none}
+    .switch .track::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+    .switch input:checked + .track{background:var(--brand)}
+    .switch input:checked + .track::after{transform:translateX(16px)}
+    .rag-hint{font-size:12px;color:var(--warn)}
+    .composer .input-row{display:flex;gap:10px;align-items:flex-end}
+    .composer textarea{resize:none;max-height:180px;min-height:46px;overflow-y:auto}
+    .send-btn{flex:none;width:46px;height:46px;padding:0;font-size:18px;border-radius:12px}
+    .composer .hint{margin-top:6px;font-size:11px;color:var(--ink-soft)}
+
+    /* ---------- Toasts ---------- */
+    .toasts{position:fixed;bottom:18px;right:18px;z-index:100;display:flex;flex-direction:column;gap:9px;max-width:340px}
+    .toast{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--brand);border-radius:10px;
+      padding:11px 14px;box-shadow:var(--shadow);font-size:13.5px;animation:slidein .2s ease}
+    .toast.ok{border-left-color:var(--ok)}.toast.err{border-left-color:var(--err)}.toast.warn{border-left-color:var(--warn)}
+    @keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+
+    .spinner{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;
+      display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ---------- Mobile ---------- */
+    .mobile-tabs{display:none}
+    @media (max-width:1080px){
+      .app{grid-template-columns:1fr;height:auto;padding:10px}
+      .col.side,.col.aside{display:none}
+      .col.side.show,.col.aside.show{display:flex}
+      .col.main{min-height:70vh}
+      .mobile-tabs{display:flex;gap:6px;position:sticky;top:61px;z-index:20;background:var(--bg);padding:8px 10px 2px}
+      .mobile-tabs button{flex:1;background:var(--surface);color:var(--ink);border:1px solid var(--border)}
+      .mobile-tabs button.active{background:var(--brand);color:#fff;border-color:var(--brand-dark)}
+      .card.flex1,.chat-card{min-height:400px}
+    }
+    @media (max-width:520px){
+      .brand .titles h1{font-size:15px}.brand .titles p{display:none}
+      .bubble-wrap{max-width:88%}
+    }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <div class="brand-head">
-      <div>
-        <h1 style="margin:0;color:var(--uqam-blue-dark)">chat-EPS – Interface locale</h1>
-        <p>Utilisez un pseudo, stockez des PDF localement et discutez avec l’IA + vos sources.</p>
+  <div class="topbar">
+    <div class="brand">
+      <span class="logo">UQÀM</span>
+      <div class="titles">
+        <h1>chat-EPS</h1>
+        <p>Co-création IA-Humain pour l'Éducation Physique et Sportive</p>
       </div>
-      <div style="text-align:right">
-        <svg width="210" height="70" viewBox="0 0 210 70" xmlns="http://www.w3.org/2000/svg" aria-label="UQAM logo">
-          <text x="0" y="52" font-size="56" font-family="Arial, Helvetica, sans-serif" font-weight="700" fill="#0077c8">UQÀM</text>
-        </svg>
-        <div class="brand-mark">Palette inspirée du logo UQÀM</div>
+    </div>
+    <div class="top-actions">
+      <span id="session-badge" class="badge"><span class="dot"></span><span id="session-text">Session non démarrée</span></span>
+      <button id="theme-btn" class="icon-btn" title="Basculer le thème clair/sombre" aria-label="Thème">🌙</button>
+    </div>
+  </div>
+
+  <div class="mobile-tabs" role="tablist">
+    <button data-tab="side">☰ Menu</button>
+    <button data-tab="main" class="active">💬 Chat</button>
+    <button data-tab="aside">📚 PDF</button>
+  </div>
+
+  <div class="app">
+    <!-- LEFT : session + conversations -->
+    <div class="col side" id="col-side">
+      <div class="card">
+        <div class="card-head"><h3><span class="step">1</span> Votre session</h3></div>
+        <div class="card-body stack">
+          <div>
+            <label class="field" for="pseudo">Pseudo</label>
+            <input id="pseudo" placeholder="Ex. Max" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field" for="model">Modèle IA (Ollama)</label>
+            <select id="model" aria-label="Modèle IA"></select>
+          </div>
+          <button id="start-btn" class="block">Démarrer la session</button>
+          <details class="adv">
+            <summary>Options avancées (modèle personnalisé, pull)</summary>
+            <div class="stack">
+              <div>
+                <label class="field" for="other-model">Modèle personnalisé</label>
+                <div class="row">
+                  <input id="other-model" placeholder="ex. gpt-oss:20b" style="flex:1;min-width:120px" />
+                  <button id="other-btn" class="ghost sm">Utiliser</button>
+                </div>
+              </div>
+              <button id="pull-btn" class="ghost sm block">⬇ Télécharger le modèle (pull)</button>
+              <p class="muted">Presets : gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. En local : <code>OLLAMA_URL=http://localhost:11434</code>.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div class="card flex1">
+        <div class="card-head">
+          <h3><span class="step">3</span> Discussions</h3>
+          <button id="new-conv-btn" class="sm">+ Nouveau</button>
+        </div>
+        <div class="card-body" style="padding-top:10px">
+          <input id="conv-filter" placeholder="🔎 Filtrer les discussions" style="margin-bottom:10px" />
+          <div id="conversations"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER : chat -->
+    <div class="col main" id="col-main">
+      <div class="card chat-card">
+        <div class="card-head">
+          <h3 id="chat-title">💬 Co-création</h3>
+          <select id="chat-mode" title="Posture pédagogique de l'IA" style="width:auto;max-width:220px;font-size:12.5px;padding:6px 9px">
+            <option value="co_design">🛠 Co-conception</option>
+            <option value="exploration_novice">🧭 Exploration (novice)</option>
+            <option value="critique">🔍 Critique</option>
+            <option value="justification">📖 Justification</option>
+            <option value="evaluation_reflexive">🪞 Évaluation réflexive</option>
+          </select>
+        </div>
+        <div id="messages" class="messages"></div>
+        <div class="composer">
+          <div class="tools">
+            <label class="switch" title="Utiliser les PDF sélectionnés comme sources">
+              <input id="use-rag" type="checkbox" checked /><span class="track"></span> Sources PDF (RAG)
+            </label>
+            <span id="rag-hint" class="rag-hint"></span>
+          </div>
+          <div class="input-row">
+            <textarea id="prompt" rows="1" placeholder="Écrivez votre message…  (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)"></textarea>
+            <button id="send-btn" class="send-btn" title="Envoyer">➤</button>
+          </div>
+          <div class="hint">💡 Astuce : sélectionnez des PDF à droite pour ancrer les réponses sur vos documents.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT : PDF library -->
+    <div class="col aside" id="col-aside">
+      <div class="card flex1">
+        <div class="card-head">
+          <h3><span class="step">2</span> Bibliothèque PDF</h3>
+          <button id="refresh-pdf-btn" class="ghost sm" title="Rafraîchir">↻</button>
+        </div>
+        <div class="card-body stack">
+          <input id="pdf-title" placeholder="Titre du document" />
+          <input id="pdf-file" type="file" accept="application/pdf" hidden />
+          <div id="dropzone" class="dropzone">
+            <b>Cliquez</b> ou glissez un PDF ici<br/><span class="muted">Le document sera indexé pour le RAG</span>
+          </div>
+          <button id="upload-btn" class="block">Uploader le PDF</button>
+          <div>
+            <div class="muted" style="margin-bottom:6px" id="pdf-selected-info">Aucune source sélectionnée</div>
+            <div id="pdfs"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <h3>Session</h3>
-    <div class="row">
-      <input id="pseudo" placeholder="Votre pseudo" value="Max" />
-      <select id="model"></select>
-      <input id="other-model" placeholder="OTHER: ex. gpt-oss:20b" style="min-width:220px" />
-      <button onclick="setOtherModel()">Utiliser OTHER</button>
-      <button onclick="pullCurrentModel()">Pull modèle</button>
-      <button onclick="startSession()">Démarrer</button>
-      <span id="session-status"></span>
-    </div>
-    <p class="muted">Presets: gpt-oss:20b, llama3.1, llama3.2, mistral, qwen2.5. En local Windows: `OLLAMA_URL=http://localhost:11434`.</p>
-  </div>
-
-  <div class="card">
-    <h3>Bibliothèque PDF locale (RAG)</h3>
-    <div class="row">
-      <input id="pdf-title" placeholder="Titre du PDF" style="min-width:220px" />
-      <input id="pdf-file" type="file" accept="application/pdf" />
-      <button onclick="uploadPdf()">Uploader PDF</button>
-      <button onclick="refreshPdfs()">Rafraîchir</button>
-      <label><input id="use-rag" type="checkbox" checked /> Utiliser RAG</label>
-      <span id="pdf-status"></span>
-    </div>
-    <div id="pdfs" class="pdf-list"></div>
-    <p class="muted">Sélectionnez un ou plusieurs PDF: seules ces sources seront utilisées dans la réponse IA. <span id="pdf-selected-info"></span></p>
-  </div>
-
-  <div class="grid">
-    <div class="card">
-      <h3>Conversations</h3>
-      <div class="row">
-        <button onclick="createConversation()">Nouveau fil</button>
-        <input id="conversation-filter" placeholder="Filtrer les discussions" style="flex:1;min-width:160px" oninput="loadConversations()" />
-      </div>
-      <div id="conversations"></div>
-    </div>
-
-    <div class="card">
-      <h3>Chat</h3>
-      <div id="messages" style="min-height:280px;max-height:420px;overflow:auto"></div>
-      <textarea id="prompt" rows="4" style="width:100%">Aide-moi à créer un plan de séance volleyball à partir des PDF sélectionnés.</textarea>
-      <div style="margin-top:8px">
-        <button onclick="sendMessage()">Envoyer</button>
-      </div>
-    </div>
-  </div>
-</div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script>
 let pseudo = localStorage.getItem('pseudo') || '';
 let selectedModel = localStorage.getItem('model') || '';
 let currentConversationId = null;
+let currentConversationTitle = '';
 let selectedPdfIds = [];
+let streaming = false;
+let abortCtrl = null;
 const PRESET_MODELS = ['gpt-oss:20b', 'llama3.1', 'llama3.2', 'mistral', 'qwen2.5'];
+const $ = (id) => document.getElementById(id);
 
-async function readErrorMessage(res){
-  try{
-    const data = await res.json();
-    return data.detail || JSON.stringify(data);
-  }catch{
-    return await res.text();
-  }
+/* ---------------- Toasts ---------------- */
+function toast(msg, type='info', ms=3800){
+  const box = $('toasts');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type==='ok'?'ok':type==='err'?'err':type==='warn'?'warn':'');
+  t.textContent = msg;
+  box.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(()=>t.remove(),300); }, ms);
 }
 
-function getHeaders(extra = {}) {
-  if (!pseudo) throw new Error('Pseudo requis');
+/* ---------------- API helpers ---------------- */
+async function readErrorMessage(res){
+  try{ const data = await res.json(); return data.detail || JSON.stringify(data); }
+  catch{ return await res.text(); }
+}
+function getHeaders(extra = {}){
+  if(!pseudo) throw new Error('Démarrez d\'abord une session (pseudo requis).');
   return { 'X-Pseudo': pseudo, ...extra };
 }
-
 async function api(path, opts={}){
   const headers = opts.headers || {};
-  if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+  if(!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   Object.assign(headers, getHeaders());
   const res = await fetch(path, {...opts, headers});
-  if (!res.ok) throw new Error(await readErrorMessage(res));
+  if(!res.ok) throw new Error(await readErrorMessage(res));
   return res;
 }
 
+/* ---------------- Session badge ---------------- */
+function setSessionBadge(){
+  const badge = $('session-badge'), text = $('session-text');
+  if(pseudo){
+    badge.classList.add('on');
+    text.textContent = `${pseudo}${selectedModel ? ' · ' + selectedModel : ''}`;
+  }else{
+    badge.classList.remove('on');
+    text.textContent = 'Session non démarrée';
+  }
+}
+
+/* ---------------- Models ---------------- */
 function fillModelSelect(models){
-  const select = document.getElementById('model');
-  select.innerHTML = '';
+  const select = $('model');
   const merged = [...new Set([...PRESET_MODELS, ...(models||[])])];
-  merged.forEach((m) => {
+  select.innerHTML = '';
+  merged.forEach((m)=>{
     const opt = document.createElement('option');
-    opt.value = m;
-    opt.textContent = m;
-    select.appendChild(opt);
+    opt.value = m; opt.textContent = m; select.appendChild(opt);
   });
-  if (selectedModel && merged.includes(selectedModel)) {
-    select.value = selectedModel;
-  } else if (merged.length) {
-    select.value = merged[0];
-  }
+  if(selectedModel && merged.includes(selectedModel)) select.value = selectedModel;
+  else if(merged.length) select.value = merged[0];
 }
-
-async function loadModels() {
-  try {
-    const res = await fetch('/chat/models');
-    const data = await res.json();
-    fillModelSelect(data.models || []);
-  } catch {
-    fillModelSelect([]);
-  }
+async function loadModels(){
+  try{ const res = await fetch('/chat/models'); const data = await res.json(); fillModelSelect(data.models || []); }
+  catch{ fillModelSelect([]); }
 }
-
 function setOtherModel(){
-  const other = document.getElementById('other-model').value.trim();
-  if(!other) return;
-  const select = document.getElementById('model');
+  const other = $('other-model').value.trim();
+  if(!other){ toast('Saisissez un nom de modèle.', 'warn'); return; }
+  const select = $('model');
   if(!Array.from(select.options).find(o => o.value === other)){
     const opt = document.createElement('option');
-    opt.value = other;
-    opt.textContent = other + ' (OTHER)';
-    select.appendChild(opt);
+    opt.value = other; opt.textContent = other + ' (perso)'; select.appendChild(opt);
   }
-  select.value = other;
-  selectedModel = other;
+  select.value = other; selectedModel = other;
   localStorage.setItem('model', selectedModel);
-  document.getElementById('session-status').innerText = `🧠 Modèle sélectionné: ${selectedModel}`;
+  setSessionBadge();
+  toast(`Modèle sélectionné : ${selectedModel}`, 'ok');
 }
-
 async function pullCurrentModel(){
+  const btn = $('pull-btn');
+  const model = $('model').value || $('other-model').value.trim();
+  if(!model){ toast('Sélectionnez ou saisissez un modèle.', 'warn'); return; }
+  const prev = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Téléchargement…';
+  toast(`Téléchargement de ${model}…`);
   try{
-    const model = document.getElementById('model').value || document.getElementById('other-model').value.trim();
-    if(!model) throw new Error('Sélectionnez ou saisissez un modèle');
-    document.getElementById('session-status').innerText = `⏳ Pull en cours: ${model}`;
     const res = await fetch('/chat/models/pull', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({model})
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model})
     });
     if(!res.ok) throw new Error(await readErrorMessage(res));
     await loadModels();
-    document.getElementById('model').value = model;
-    selectedModel = model;
-    localStorage.setItem('model', selectedModel);
-    document.getElementById('session-status').innerText = `✅ Modèle prêt: ${model}`;
-  }catch(e){
-    document.getElementById('session-status').innerText = `❌ ${e.message}`;
-  }
+    $('model').value = model; selectedModel = model;
+    localStorage.setItem('model', selectedModel); setSessionBadge();
+    toast(`Modèle prêt : ${model}`, 'ok');
+  }catch(e){ toast(e.message, 'err', 6000); }
+  finally{ btn.disabled = false; btn.innerHTML = prev; }
 }
 
+/* ---------------- Session ---------------- */
 async function startSession(){
+  const btn = $('start-btn');
   try{
-    pseudo = document.getElementById('pseudo').value.trim();
-    selectedModel = document.getElementById('model').value;
-    if(!pseudo) throw new Error('Pseudo obligatoire');
+    pseudo = $('pseudo').value.trim();
+    selectedModel = $('model').value;
+    if(!pseudo) throw new Error('Le pseudo est obligatoire.');
     localStorage.setItem('pseudo', pseudo);
     localStorage.setItem('model', selectedModel);
-    document.getElementById('session-status').innerText = `✅ Session: ${pseudo} | modèle: ${selectedModel}`;
+    setSessionBadge();
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Connexion…';
     await Promise.all([loadConversations(), refreshPdfs()]);
-  }catch(e){
-    document.getElementById('session-status').innerText = '❌ ' + e.message;
-  }
+    toast(`Bienvenue ${pseudo} !`, 'ok');
+  }catch(e){ toast(e.message, 'err'); }
+  finally{ btn.disabled = false; btn.textContent = 'Démarrer la session'; }
 }
 
+/* ---------------- PDF library ---------------- */
 async function uploadPdf(){
+  const btn = $('upload-btn');
   try{
-    const title = document.getElementById('pdf-title').value.trim();
-    const fileInput = document.getElementById('pdf-file');
+    if(!pseudo) throw new Error('Démarrez d\'abord une session.');
+    const fileInput = $('pdf-file');
     const file = fileInput.files && fileInput.files[0];
-    if(!title) throw new Error('Titre PDF requis');
-    if(!file) throw new Error('Choisir un fichier PDF');
+    let title = $('pdf-title').value.trim();
+    if(!file) throw new Error('Choisissez un fichier PDF.');
+    if(!title) title = file.name.replace(/\.pdf$/i,'');
     const form = new FormData();
-    form.set('title', title);
-    form.set('file', file);
-    document.getElementById('pdf-status').innerText = '⏳ Upload/ingestion...';
+    form.set('title', title); form.set('file', file);
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Ingestion…';
     const res = await fetch('/library/upload', { method:'POST', headers:getHeaders(), body:form });
     if(!res.ok) throw new Error(await readErrorMessage(res));
-    document.getElementById('pdf-status').innerText = '✅ PDF envoyé';
-    fileInput.value = '';
+    toast('PDF envoyé et en cours d\'indexation.', 'ok');
+    fileInput.value = ''; $('pdf-title').value = ''; resetDropzone();
     await refreshPdfs();
-  }catch(e){
-    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
-  }
+  }catch(e){ toast(e.message, 'err', 6000); }
+  finally{ btn.disabled = false; btn.textContent = 'Uploader le PDF'; }
 }
-
 function updateSelectedPdfInfo(){
   const n = selectedPdfIds.length;
-  document.getElementById('pdf-selected-info').innerText = n ? `${n} sélectionné(s)` : 'aucun sélectionné';
+  $('pdf-selected-info').textContent = n ? `✅ ${n} source(s) active(s) pour le RAG` : 'Aucune source sélectionnée';
+  updateRagHint();
 }
-
-async function renamePdf(docId){
-  const current = document.querySelector(`button[data-rename-id="${docId}"]`)?.getAttribute('data-current-title') || '';
-  const next = prompt('Nouveau nom du PDF :', current);
+async function renamePdf(docId, current){
+  const next = prompt('Nouveau nom du PDF :', current || '');
   if(next === null) return;
-  const title = next.trim();
-  if(!title) return;
+  const title = next.trim(); if(!title) return;
   try{
     await api(`/library/documents/${docId}`, {method:'PATCH', body: JSON.stringify({title})});
-    document.getElementById('pdf-status').innerText = '✅ PDF renommé';
-    await refreshPdfs();
-  }catch(e){
-    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
-  }
+    toast('PDF renommé.', 'ok'); await refreshPdfs();
+  }catch(e){ toast(e.message, 'err'); }
 }
-
 async function deletePdf(docId){
   if(!confirm('Supprimer ce PDF ?')) return;
   try{
     await api(`/library/documents/${docId}`, {method:'DELETE'});
     selectedPdfIds = selectedPdfIds.filter(x => x !== docId);
-    document.getElementById('pdf-status').innerText = '✅ PDF supprimé';
-    await refreshPdfs();
-  }catch(e){
-    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
-  }
+    toast('PDF supprimé.', 'ok'); await refreshPdfs();
+  }catch(e){ toast(e.message, 'err'); }
 }
-
+function statusBadge(status){
+  if(status === 'ready') return '<span class="status-badge status-ready">prêt</span>';
+  if(status === 'failed') return '<span class="status-badge status-failed">échec</span>';
+  return `<span class="status-badge status-pending">${escapeHtml(status||'…')}</span>`;
+}
 function renderPdfs(items){
-  const box = document.getElementById('pdfs');
+  const box = $('pdfs');
   box.innerHTML = '';
   if(!items.length){
-    box.innerHTML = '<span class="muted">Aucun PDF pour le moment.</span>';
-    updateSelectedPdfInfo();
-    return;
+    box.innerHTML = '<p class="muted">Aucun PDF pour le moment. Ajoutez-en un ci-dessus pour enrichir les réponses de l\'IA.</p>';
+    updateSelectedPdfInfo(); return;
   }
   items.forEach(d=>{
-    const row = document.createElement('div');
-    row.style.marginBottom = '6px';
     const enabled = d.status === 'ready';
-    const checked = enabled && selectedPdfIds.includes(d.id) ? 'checked' : '';
-    const disabled = enabled ? '' : 'disabled';
-    const note = d.status === 'failed' ? ' (ingestion échouée, fallback local activé)' : '';
-    row.innerHTML = `<label><input type="checkbox" data-id="${d.id}" ${checked} ${disabled}/> <b>${d.title}</b> — ${d.status}${note}</label>
-      <button data-rename-id="${d.id}" data-current-title="${String(d.title).replace(/"/g, '&quot;')}" style="margin-left:8px">Renommer</button>
-      <button data-delete-id="${d.id}" style="margin-left:6px;background:#b42318;border-color:#941b12">Supprimer</button>`;
-    box.appendChild(row);
-  });
-  box.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    const checked = enabled && selectedPdfIds.includes(d.id);
+    const note = d.status === 'failed' ? '<div class="muted" style="font-size:11px">Ingestion échouée · repli local activé</div>' : '';
+    const item = document.createElement('div');
+    item.className = 'pdf-item' + (checked ? ' on' : '');
+    item.innerHTML = `
+      <input type="checkbox" ${checked?'checked':''} ${enabled?'':'disabled'} aria-label="Activer ${escapeHtml(d.title)}"/>
+      <div class="pdf-main">
+        <div class="pdf-title">${escapeHtml(d.title)}</div>
+        ${statusBadge(d.status)} ${note}
+      </div>
+      <div class="pdf-actions">
+        <button class="rename" title="Renommer">✏️</button>
+        <button class="del" title="Supprimer">🗑</button>
+      </div>`;
+    const cb = item.querySelector('input');
     cb.addEventListener('change', ()=>{
-      const id = Number(cb.getAttribute('data-id'));
-      if(cb.checked){
-        if(!selectedPdfIds.includes(id)) selectedPdfIds.push(id);
-      }else{
-        selectedPdfIds = selectedPdfIds.filter(x=>x!==id);
-      }
+      if(cb.checked){ if(!selectedPdfIds.includes(d.id)) selectedPdfIds.push(d.id); item.classList.add('on'); }
+      else{ selectedPdfIds = selectedPdfIds.filter(x=>x!==d.id); item.classList.remove('on'); }
       updateSelectedPdfInfo();
     });
-  });
-  box.querySelectorAll('button[data-rename-id]').forEach(btn=>{
-    btn.addEventListener('click', ()=> renamePdf(Number(btn.getAttribute('data-rename-id'))));
-  });
-  box.querySelectorAll('button[data-delete-id]').forEach(btn=>{
-    btn.addEventListener('click', ()=> deletePdf(Number(btn.getAttribute('data-delete-id'))));
+    item.querySelector('.rename').addEventListener('click', ()=> renamePdf(d.id, d.title));
+    item.querySelector('.del').addEventListener('click', ()=> deletePdf(d.id));
+    box.appendChild(item);
   });
   updateSelectedPdfInfo();
 }
-
 async function refreshPdfs(){
   try{
     const res = await api('/library/documents');
     const docs = await res.json();
-    selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id && d.status === "ready"));
+    selectedPdfIds = selectedPdfIds.filter(id => docs.some(d => d.id === id && d.status === 'ready'));
     renderPdfs(docs);
-    updateSelectedPdfInfo();
-  }catch(e){
-    document.getElementById('pdf-status').innerText = `❌ ${e.message}`;
-  }
+  }catch(e){ toast(e.message, 'err'); }
 }
 
+/* ---------------- Conversations ---------------- */
 async function deleteConversation(id){
-  if(!confirm('Supprimer ce fil de discussion ?')) return;
+  if(!confirm('Supprimer cette discussion ?')) return;
   try{
     await api(`/chat/conversations/${id}`, {method:'DELETE'});
-    if(currentConversationId === id){
-      currentConversationId = null;
-      document.getElementById('messages').innerHTML = '';
-    }
+    if(currentConversationId === id){ currentConversationId = null; renderEmptyChat(); }
+    toast('Discussion supprimée.', 'ok');
     await loadConversations();
-  }catch(e){
-    document.getElementById('session-status').innerText = `❌ ${e.message}`;
-  }
+  }catch(e){ toast(e.message, 'err'); }
 }
-
 async function renameConversation(id, currentTitle){
-  const next = prompt('Nouveau titre du fil :', currentTitle || '');
+  const next = prompt('Nouveau titre :', currentTitle || '');
   if(next === null) return;
-  const title = next.trim();
-  if(!title) return;
+  const title = next.trim(); if(!title) return;
   try{
     await api(`/chat/conversations/${id}`, {method:'PATCH', body: JSON.stringify({title})});
-    if(currentConversationId === id) document.getElementById('session-status').innerText = `✅ Fil renommé: ${title}`;
+    if(currentConversationId === id){ currentConversationTitle = title; updateChatTitle(); }
+    toast('Discussion renommée.', 'ok');
     await loadConversations();
-  }catch(e){
-    document.getElementById('session-status').innerText = `❌ ${e.message}`;
-  }
+  }catch(e){ toast(e.message, 'err'); }
 }
-
-function renderConversationItem(container, c, prepend=false){
+function modeLabel(mode){
+  return ({co_design:'Co-conception',exploration_novice:'Exploration',critique:'Critique',
+    justification:'Justification',evaluation_reflexive:'Éval. réflexive'})[mode] || mode || 'co_design';
+}
+function renderConversationItem(container, c){
   const id = Number(c?.id);
   if(!Number.isFinite(id)) return;
   const row = document.createElement('div');
-  row.style.display='flex';
-  row.style.gap='6px';
-  row.style.margin='8px 0';
-
-  const openBtn = document.createElement('button');
-  openBtn.textContent = `${c.title || 'Sans titre'} (${c.mode || 'co_design'})`;
-  openBtn.style.flex='1';
-  openBtn.style.textAlign='left';
-  if(currentConversationId === id) openBtn.style.outline = '2px solid #84a9ff';
-  openBtn.onclick = ()=> loadMessages(id);
-
-  const renameBtn = document.createElement('button');
-  renameBtn.textContent = '✏️';
-  renameBtn.title = 'Renommer le fil';
-  renameBtn.onclick = ()=> renameConversation(id, c.title || '');
-
-  const delBtn = document.createElement('button');
-  delBtn.textContent = '🗑';
-  delBtn.title = 'Supprimer le fil';
-  delBtn.style.background = '#b42318'; delBtn.style.borderColor='#941b12';
-  delBtn.onclick = ()=> deleteConversation(id);
-
-  row.appendChild(openBtn);
-  row.appendChild(renameBtn);
-  row.appendChild(delBtn);
-  if(prepend) container.prepend(row); else container.appendChild(row);
+  row.className = 'conv' + (currentConversationId === id ? ' active' : '');
+  row.innerHTML = `
+    <div class="conv-main">
+      <div class="conv-title">${escapeHtml(c.title || 'Sans titre')}</div>
+      <div class="conv-mode">${escapeHtml(modeLabel(c.mode))}</div>
+    </div>
+    <div class="conv-actions">
+      <button class="rn" title="Renommer">✏️</button>
+      <button class="dl" title="Supprimer">🗑</button>
+    </div>`;
+  row.querySelector('.conv-main').addEventListener('click', ()=> loadMessages(id, c.title, c.mode));
+  row.querySelector('.rn').addEventListener('click', (e)=>{ e.stopPropagation(); renameConversation(id, c.title || ''); });
+  row.querySelector('.dl').addEventListener('click', (e)=>{ e.stopPropagation(); deleteConversation(id); });
+  container.appendChild(row);
 }
-
-function addConversationButton(c){
-  const el = document.getElementById('conversations');
-  renderConversationItem(el, c, true);
-}
-
 function normalizeConversationPayload(data){
   if(!data) return null;
   if(Array.isArray(data)) return data[0] || null;
   if(data.conversation) return data.conversation;
   return data;
 }
-
 async function createConversation(){
   try{
-    const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Fil de ${pseudo}`, mode:'co_design'})});
+    const mode = $('chat-mode').value || 'co_design';
+    const res = await api('/chat/conversations',{method:'POST', body:JSON.stringify({title:`Discussion de ${pseudo}`, mode})});
     const raw = await res.json();
     const conv = normalizeConversationPayload(raw);
     const id = Number(conv?.id);
-    if (!Number.isFinite(id)) {
+    if(!Number.isFinite(id)){
       const items = await loadConversations();
-      if(items.length){
-        await loadMessages(items[0].id);
-        return items[0];
-      }
-      throw new Error('Conversation invalide retournée par l’API');
+      if(items.length){ await loadMessages(items[0].id, items[0].title, items[0].mode); return items[0]; }
+      throw new Error('Réponse de conversation invalide.');
     }
     currentConversationId = id;
-    addConversationButton({...conv, id});
-    await loadMessages(id);
+    currentConversationTitle = conv.title || `Discussion de ${pseudo}`;
+    await loadConversations();
+    renderEmptyChat();
+    updateChatTitle();
     return {...conv, id};
-  }catch(e){
-    document.getElementById('session-status').innerText = `❌ ${e.message}`;
-    return null;
-  }
+  }catch(e){ toast(e.message, 'err'); return null; }
 }
-
 async function loadConversations(){
+  if(!pseudo) return [];
   const res = await api('/chat/conversations');
   const raw = await res.json();
   const items = Array.isArray(raw) ? raw : (raw?.items || []);
-  const q = (document.getElementById('conversation-filter')?.value || "").trim().toLowerCase();
-  const filtered = q ? items.filter(c => `${c.title || ""} ${c.mode || ""}`.toLowerCase().includes(q)) : items;
-  const el = document.getElementById('conversations');
+  const q = ($('conv-filter')?.value || '').trim().toLowerCase();
+  const filtered = q ? items.filter(c => `${c.title || ''} ${c.mode || ''}`.toLowerCase().includes(q)) : items;
+  const el = $('conversations');
   el.innerHTML = '';
-  filtered.forEach(c=> renderConversationItem(el, c));
+  if(!filtered.length){
+    el.innerHTML = '<p class="muted">Aucune discussion. Cliquez sur « + Nouveau » pour commencer.</p>';
+  } else {
+    filtered.forEach(c=> renderConversationItem(el, c));
+  }
   return filtered.filter(c=>Number.isFinite(Number(c?.id)));
 }
-
-async function loadMessages(id){
-  if (id === undefined || id === null || Number.isNaN(Number(id))) return;
+async function loadMessages(id, title, mode){
+  if(id === undefined || id === null || Number.isNaN(Number(id))) return;
   currentConversationId = Number(id);
+  currentConversationTitle = title || 'Discussion';
+  if(mode) $('chat-mode').value = mode;
+  updateChatTitle();
+  await loadConversations();
+  goMobileTab('main');
   const res = await api(`/chat/conversations/${id}/messages`);
   const msgs = await res.json();
-  const box = document.getElementById('messages');
-  box.innerHTML='';
-  msgs.forEach(m=>appendMessage(m.role, m.content));
-}
-
-function appendMessage(role, content){
-  const box = document.getElementById('messages');
-  const div = document.createElement('div');
-  div.className = 'msg ' + (role === 'assistant' ? 'assistant' : '');
-  div.innerHTML = `<b>${role}:</b> ${String(content).replace(/\n/g,'<br/>')}`;
-  box.appendChild(div);
+  const box = $('messages');
+  box.innerHTML = '';
+  if(!msgs.length){ renderEmptyChat(); return; }
+  msgs.forEach(m=>{
+    const node = appendTurn(m.role);
+    setBubbleContent(node, m.content, m.role);
+    const cits = m.metadata_json && m.metadata_json.citations;
+    if(m.role === 'assistant' && cits && cits.length) appendCitations(node, cits);
+  });
   box.scrollTop = box.scrollHeight;
-  return div;
 }
 
+/* ---------------- Chat rendering ---------------- */
+function updateChatTitle(){
+  $('chat-title').textContent = '💬 ' + (currentConversationTitle || 'Co-création');
+}
+function escapeHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// Minimal, safe markdown-ish renderer (escapes first).
+function renderMarkdown(text){
+  let t = escapeHtml(text);
+  t = t.replace(/```([\s\S]*?)```/g, (m,c)=>`<pre style="white-space:pre-wrap;background:rgba(0,0,0,.06);padding:8px;border-radius:8px;overflow:auto"><code>${c}</code></pre>`);
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  t = t.replace(/^\s*#{1,4}\s+(.+)$/gm, '<h4>$1</h4>');
+  const lines = t.split('\n'); let out = ''; let inList = false;
+  for(const line of lines){
+    const li = line.match(/^\s*[-*]\s+(.+)$/) || line.match(/^\s*\d+\.\s+(.+)$/);
+    if(li){ if(!inList){ out += '<ul>'; inList = true; } out += `<li>${li[1]}</li>`; }
+    else{ if(inList){ out += '</ul>'; inList = false; }
+      if(line.trim()==='') out += '<br/>'; else out += `<p>${line}</p>`; }
+  }
+  if(inList) out += '</ul>';
+  return out;
+}
+function appendTurn(role){
+  const box = $('messages');
+  const empty = box.querySelector('.empty-chat'); if(empty) empty.remove();
+  const isAi = role === 'assistant';
+  const turn = document.createElement('div');
+  turn.className = 'turn ' + (isAi ? 'ai' : 'user');
+  turn.innerHTML = `
+    <div class="avatar ${isAi?'ai':'user'}">${isAi?'🤖':(pseudo[0]||'U').toUpperCase()}</div>
+    <div class="bubble-wrap"><div class="bubble"></div></div>`;
+  box.appendChild(turn);
+  box.scrollTop = box.scrollHeight;
+  return turn;
+}
+function setBubbleContent(turn, content, role){
+  const bubble = turn.querySelector('.bubble');
+  if(role === 'assistant') bubble.innerHTML = renderMarkdown(content);
+  else bubble.innerHTML = escapeHtml(content).replace(/\n/g,'<br/>');
+}
+function setTyping(turn){
+  turn.querySelector('.bubble').innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+}
+function appendCitations(turn, citations){
+  const wrap = turn.querySelector('.bubble-wrap');
+  const det = document.createElement('details');
+  det.className = 'citations';
+  det.innerHTML = `<summary>📎 ${citations.length} source(s) PDF</summary>`;
+  citations.forEach(c=>{
+    const d = document.createElement('div');
+    d.className = 'cite';
+    d.innerHTML = `<b>${escapeHtml(c.title||'Document')}</b> · p.${escapeHtml(String(c.page??'?'))}
+      <span class="ex">${escapeHtml(c.excerpt||'')}</span>`;
+    det.appendChild(d);
+  });
+  wrap.appendChild(det);
+}
+function renderEmptyChat(){
+  const box = $('messages');
+  const started = !!currentConversationId;
+  box.innerHTML = `
+    <div class="empty-chat">
+      <div class="big">🏅</div>
+      <h2>${started ? 'Nouvelle discussion' : 'Bienvenue sur chat-EPS'}</h2>
+      <p>${pseudo ? 'Posez une question ou choisissez une idée pour lancer la co-création.' : 'Démarrez une session (étape 1) pour commencer.'}</p>
+      <div class="suggestions">
+        <button class="suggestion" data-s="Aide-moi à créer un plan de séance de volleyball pour des débutants, avec objectifs, différenciation et évaluation.">🏐 Plan de séance volleyball (débutants)</button>
+        <button class="suggestion" data-s="Propose une situation d'apprentissage en athlétisme (course de haies) avec critères de réussite.">🏃 Situation d'apprentissage — haies</button>
+        <button class="suggestion" data-s="Comment évaluer les compétences motrices de mes élèves de façon formative en EPS ?">📋 Idées d'évaluation formative</button>
+      </div>
+    </div>`;
+  box.querySelectorAll('.suggestion').forEach(b=>{
+    b.addEventListener('click', ()=>{ $('prompt').value = b.getAttribute('data-s'); autoGrow($('prompt')); $('prompt').focus(); });
+  });
+}
+
+/* ---------------- Send ---------------- */
+function updateRagHint(){
+  const useRag = $('use-rag').checked;
+  const hint = $('rag-hint');
+  if(useRag && selectedPdfIds.length === 0) hint.textContent = '⚠️ Aucun PDF sélectionné — sélectionnez-en un ou désactivez le RAG.';
+  else hint.textContent = '';
+}
+function setStreamingState(on){
+  streaming = on;
+  const btn = $('send-btn');
+  btn.textContent = on ? '■' : '➤';
+  btn.title = on ? 'Arrêter la génération' : 'Envoyer';
+  btn.style.background = on ? 'var(--err)' : '';
+  btn.style.borderColor = on ? 'var(--err)' : '';
+}
+async function onSendClick(){
+  if(streaming){ if(abortCtrl) abortCtrl.abort(); return; }
+  await sendMessage();
+}
 async function sendMessage(){
+  const content = $('prompt').value.trim();
+  if(!content){ toast('Écrivez un message.', 'warn'); return; }
+  if(!pseudo){ toast('Démarrez d\'abord une session.', 'warn'); return; }
   if(!currentConversationId){
     const conv = await createConversation();
     if(!conv || !currentConversationId) return;
   }
-  const content = document.getElementById('prompt').value;
-  const useRag = document.getElementById('use-rag').checked;
-  selectedModel = document.getElementById('model').value;
-  const uniqueIds = [...new Set(selectedPdfIds.map(Number).filter(Number.isFinite))];
-  if(useRag && uniqueIds.length === 0){
-    document.getElementById('pdf-status').innerText = "⚠️ Activez au moins un PDF prêt, ou décochez Utiliser RAG.";
-  }
+  const useRag = $('use-rag').checked;
+  selectedModel = $('model').value;
   localStorage.setItem('model', selectedModel);
+  const uniqueIds = [...new Set(selectedPdfIds.map(Number).filter(Number.isFinite))];
+  if(useRag && uniqueIds.length === 0) toast('RAG activé sans PDF : réponse sans sources.', 'warn');
 
-  appendMessage('user', content);
-  const aiNode = appendMessage('assistant', '');
+  const userTurn = appendTurn('user');
+  setBubbleContent(userTurn, content, 'user');
+  $('prompt').value = ''; autoGrow($('prompt'));
+  const aiTurn = appendTurn('assistant');
+  setTyping(aiTurn);
+  setStreamingState(true);
 
-  const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
-    method:'POST',
-    headers:getHeaders({'Content-Type':'application/json'}),
-    body: JSON.stringify({content, use_rag:useRag, collection_ids:uniqueIds, model:selectedModel})
-  });
-  if(!res.ok){
-    aiNode.innerHTML = `<b>assistant:</b> ❌ ${await readErrorMessage(res)}`;
-    return;
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
+  abortCtrl = new AbortController();
   let built = '';
-  while(true){
-    const {done, value} = await reader.read();
-    if(done) break;
-    const chunk = decoder.decode(value);
-    chunk.split('\n\n').forEach(line=>{
-      if(!line.startsWith('data:')) return;
-      const data = JSON.parse(line.slice(5).trim());
-      if(data.token){
-        built += data.token;
-        aiNode.innerHTML = `<b>assistant:</b> ${built.replace(/\n/g,'<br/>')}`;
-      }
-      if(data.error){
-        aiNode.innerHTML = `<b>assistant:</b> ❌ ${data.error}`;
-      }
+  try{
+    const res = await fetch(`/chat/conversations/${currentConversationId}/stream`, {
+      method:'POST',
+      headers:getHeaders({'Content-Type':'application/json'}),
+      body: JSON.stringify({content, use_rag:useRag, collection_ids:uniqueIds, model:selectedModel}),
+      signal: abortCtrl.signal
     });
+    if(!res.ok){ aiTurn.querySelector('.bubble').innerHTML = `❌ ${escapeHtml(await readErrorMessage(res))}`; setStreamingState(false); return; }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buffer += decoder.decode(value, {stream:true});
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop();
+      for(const line of parts){
+        if(!line.startsWith('data:')) continue;
+        let data; try{ data = JSON.parse(line.slice(5).trim()); }catch{ continue; }
+        if(data.token){ built += data.token; setBubbleContent(aiTurn, built, 'assistant'); $('messages').scrollTop = $('messages').scrollHeight; }
+        if(data.citations && data.citations.length) appendCitations(aiTurn, data.citations);
+        if(data.error){ aiTurn.querySelector('.bubble').innerHTML = `❌ ${escapeHtml(data.error)}`; }
+      }
+    }
+    if(!built) aiTurn.querySelector('.bubble').innerHTML = '<span class="muted">(réponse vide)</span>';
+  }catch(e){
+    if(e.name === 'AbortError'){
+      setBubbleContent(aiTurn, built + '\n\n_(génération interrompue)_', 'assistant');
+      toast('Génération arrêtée.', 'warn');
+    }else{
+      aiTurn.querySelector('.bubble').innerHTML = `❌ ${escapeHtml(e.message)}`;
+    }
+  }finally{
+    setStreamingState(false); abortCtrl = null;
   }
 }
 
-(async function init(){
-  document.getElementById('pseudo').value = pseudo || 'Max';
-  await loadModels();
-  if (selectedModel && Array.from(document.getElementById('model').options).find(o => o.value === selectedModel)) {
-    document.getElementById('model').value = selectedModel;
-  }
-  const prompt = document.getElementById('prompt');
-  prompt.addEventListener('keydown', (e)=>{
-    if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){
-      e.preventDefault();
-      sendMessage();
-    }
+/* ---------------- Textarea autogrow ---------------- */
+function autoGrow(el){ el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; }
+
+/* ---------------- Dropzone ---------------- */
+function resetDropzone(){
+  $('dropzone').innerHTML = '<b>Cliquez</b> ou glissez un PDF ici<br/><span class="muted">Le document sera indexé pour le RAG</span>';
+}
+function showChosenFile(name){
+  $('dropzone').innerHTML = `📄 <b>${escapeHtml(name)}</b><br/><span class="muted">Prêt à uploader</span>`;
+}
+
+/* ---------------- Theme ---------------- */
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  $('theme-btn').textContent = theme === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('theme', theme);
+}
+
+/* ---------------- Mobile tabs ---------------- */
+function goMobileTab(tab){
+  if(window.innerWidth > 1080) return;
+  document.querySelectorAll('.mobile-tabs button').forEach(b=> b.classList.toggle('active', b.dataset.tab===tab));
+  $('col-side').classList.toggle('show', tab==='side');
+  $('col-main').classList.toggle('show', tab==='main');
+  $('col-aside').classList.toggle('show', tab==='aside');
+}
+
+/* ---------------- Wire up ---------------- */
+function bindEvents(){
+  $('start-btn').addEventListener('click', startSession);
+  $('other-btn').addEventListener('click', setOtherModel);
+  $('pull-btn').addEventListener('click', pullCurrentModel);
+  $('model').addEventListener('change', ()=>{ selectedModel = $('model').value; localStorage.setItem('model', selectedModel); setSessionBadge(); });
+  $('new-conv-btn').addEventListener('click', ()=>{ createConversation(); goMobileTab('main'); });
+  $('conv-filter').addEventListener('input', loadConversations);
+  $('refresh-pdf-btn').addEventListener('click', refreshPdfs);
+  $('upload-btn').addEventListener('click', uploadPdf);
+  $('use-rag').addEventListener('change', updateRagHint);
+  $('send-btn').addEventListener('click', onSendClick);
+  $('theme-btn').addEventListener('click', ()=> applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'));
+
+  // dropzone
+  const dz = $('dropzone'), fi = $('pdf-file');
+  dz.addEventListener('click', ()=> fi.click());
+  fi.addEventListener('change', ()=>{ if(fi.files[0]){ showChosenFile(fi.files[0].name); if(!$('pdf-title').value.trim()) $('pdf-title').value = fi.files[0].name.replace(/\.pdf$/i,''); } });
+  ['dragover','dragenter'].forEach(ev=> dz.addEventListener(ev, e=>{ e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','dragend'].forEach(ev=> dz.addEventListener(ev, ()=> dz.classList.remove('drag')));
+  dz.addEventListener('drop', e=>{
+    e.preventDefault(); dz.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if(f && f.type === 'application/pdf'){ fi.files = e.dataTransfer.files; showChosenFile(f.name); if(!$('pdf-title').value.trim()) $('pdf-title').value = f.name.replace(/\.pdf$/i,''); }
+    else toast('Déposez un fichier PDF.', 'warn');
   });
-  if (pseudo) {
-    document.getElementById('session-status').innerText = `✅ Session: ${pseudo}`;
-    try { await Promise.all([loadConversations(), refreshPdfs()]); } catch {}
+
+  // composer
+  const prompt = $('prompt');
+  prompt.addEventListener('input', ()=> autoGrow(prompt));
+  prompt.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); onSendClick(); }
+  });
+
+  // mobile tabs
+  document.querySelectorAll('.mobile-tabs button').forEach(b=> b.addEventListener('click', ()=> goMobileTab(b.dataset.tab)));
+
+  // pseudo Enter -> start
+  $('pseudo').addEventListener('keydown', e=>{ if(e.key==='Enter') startSession(); });
+}
+
+/* ---------------- Init ---------------- */
+(async function init(){
+  applyTheme(localStorage.getItem('theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  bindEvents();
+  $('pseudo').value = pseudo || 'Max';
+  await loadModels();
+  if(selectedModel && Array.from($('model').options).find(o => o.value === selectedModel)) $('model').value = selectedModel;
+  setSessionBadge();
+  renderEmptyChat();
+  if(pseudo){
+    try{ await Promise.all([loadConversations(), refreshPdfs()]); }catch{}
   }
 })();
 </script>
