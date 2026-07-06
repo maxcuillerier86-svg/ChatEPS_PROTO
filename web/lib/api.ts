@@ -6,7 +6,7 @@ export function getToken() {
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
-  const headers: HeadersInit = { "Content-Type": "application/json", ...(options.headers || {}) };
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(options.headers as Record<string, string> || {}) };
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const resp = await fetch(`${API_URL}${path}`, { ...options, headers });

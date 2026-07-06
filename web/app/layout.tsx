@@ -1,33 +1,18 @@
 import "./globals.css";
-import Link from "next/link";
+import type { Metadata } from "next";
+import NavBar from "./nav";
 
-const nav = [
-  ["Accueil", "/"],
-  ["Connexion", "/login"],
-  ["Chat", "/chat"],
-  ["Bibliothèque", "/library"],
-  ["Atelier", "/artifacts"],
-  ["Progression", "/dashboard"],
-] as const;
+export const metadata: Metadata = {
+  title: "Co-PE · chat-EPS",
+  description: "Co-création IA-Humain pour l'Éducation Physique et Sportive (local, sans cloud).",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
       <body>
-        <main>
-          <header className="card" style={{ marginTop: 12 }}>
-            <h1 style={{ margin: 0 }}>Co-PE</h1>
-            <p style={{ margin: "8px 0 0 0" }}>Co-création pédagogique en EPS (local, sans cloud)</p>
-            <nav style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-              {nav.map(([label, href]) => (
-                <Link key={href} href={href}>
-                  {label}
-                </Link>
-              ))}
-            </nav>
-          </header>
-          {children}
-        </main>
+        <NavBar />
+        <main>{children}</main>
       </body>
     </html>
   );
